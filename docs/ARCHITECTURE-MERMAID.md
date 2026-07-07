@@ -1,46 +1,54 @@
-flowchart TD
-    A[Git Repo] --> B[Gitea CI/CD]
-    B --> C[Terraform]
-    C --> D[Proxmox]
-    D --> E[Cloud-init]
-    E --> F[Ansible]
-    F --> G[Technitium DNS]
+# GitOps DNS Architecture (Mermaid)
 
-    subgraph Git Repo
-        zones[Zones]
-        scripts[Scripts]
-        terraform[Terraform Module]
-        ansible[Ansible Playbooks]
+```mermaid
+flowchart LR
+    subgraph G[Git Repository]
+        G1[Zones]
+        G2[Scripts]
+        G3[Terraform]
+        G4[Ansible]
     end
 
-    subgraph CI/CD
-        syntax[Syntax Validation]
-        strict[Strict Diff Checker]
-        serial[Serial Enforcement]
+    subgraph CI[Gitea CI/CD]
+        CI1[Syntax Validation]
+        CI2[Strict Diff Checker]
+        CI3[Serial Enforcement]
+        CI4[Secret Scanning]
     end
 
-    subgraph Terraform
-        vmid[VMID Allocation]
-        vmcreate[VM Creation]
-        dnscheck[DNS Readiness]
-        cutover[Zero-Downtime Cutover]
+    subgraph TF[Terraform]
+        TF1[VMID Allocation]
+        TF2[VM Creation]
+        TF3[DNS Readiness Check]
+        TF4[Zero-Downtime Cutover]
     end
 
-    subgraph Proxmox
-        template[Cloud-init Template]
-        lifecycle[VM Lifecycle]
-        bwenv[Bitwarden Env Storage]
+    subgraph PX[Proxmox]
+        PX1[Cloud-init Template]
+        PX2[VM Lifecycle]
+        PX3[Bitwarden Env Storage]
     end
 
-    subgraph Cloud-init
-        clone[Clone Repo]
-        loadenv[Load Bitwarden Env]
-        runansible[Run Ansible]
+    subgraph CI2A[Cloud-init]
+        CI2A1[Clone Repo]
+        CI2A2[Load Bitwarden Env]
+        CI2A3[Run Ansible]
     end
 
-    subgraph Ansible
-        install[Install Technitium]
-        config[Configure TSIG]
-        zonesimport[Import Zones]
-        rfc2136[Configure RFC2136]
+    subgraph AN[Ansible]
+        AN1[Install Technitium]
+        AN2[Configure TSIG]
+        AN3[Import Zones]
+        AN4[Configure RFC2136]
     end
+
+    subgraph DNS[Technitium DNS]
+        DNS1[Authoritative DNS Server]
+    end
+
+    G --> CI
+    CI --> TF
+    TF --> PX
+    PX --> CI2A
+    CI2A --> AN
+    AN --> DNS

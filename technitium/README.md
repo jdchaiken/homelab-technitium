@@ -1,108 +1,88 @@
-# Technitium DNS Server – GitOps Deployment
+# GitOps DNS Platform
 
-This directory contains all automation required to deploy Technitium DNS Server
-in a fully declarative GitOps workflow.
+A fully declarative, GitOps-driven DNS platform built on Technitium DNS,
+Terraform, Proxmox, Cloud-init, Ansible, and Gitea CI/CD.
 
----
+This repository manages:
 
-## Structure
+- Authoritative DNS zones
+- Technitium DNS server configuration
+- VM lifecycle (Terraform + Proxmox)
+- Secrets (Bitwarden → Proxmox → Cloud-init → Ansible)
+- CI/CD validation and enforcement
 
-    technitium/
-      ansible/        # install + configure playbooks
-      cloud-init/     # technitium-user.yaml
-      terraform/      # VM lifecycle automation
-        scripts/      # VMID allocator
-
----
-
-## Ansible
-
-Located under:
-
-    technitium/ansible/
-
-### install-technitium.yaml
-Installs Technitium DNS Server.
-
-### configure-technitium.yaml
-Configures:
-
-- TSIG keys (via Bitwarden)
-- Upstream resolvers
-- ACLs
-- Logging
-- Zone imports
-- RFC2136 support
+Everything is reproducible, version-controlled, and zero-downtime.
 
 ---
 
-## Cloud-init
+## Documentation
 
-Located under:
+Start here:
 
-    technitium/cloud-init/technitium-user.yaml
+- [Getting Started](docs/GETTING-STARTED.md)
+- [Onboarding Guide](docs/ONBOARDING.md)
+- [Developer Quickstart](docs/DEV-QUICKSTART.md)
+- [Operator Cheat Sheet](docs/CHEATSHEET.md)
 
-Cloud-init:
+Architecture:
 
-- Clones the Git repo
-- Copies Bitwarden env
-- Exports Bitwarden credentials
-- Runs Ansible install + configure
+- [Architecture Overview](docs/ARCHITECTURE.md)
+- [Architecture Diagram](docs/ARCHITECTURE-DIAGRAM.md)
+- [Architecture (Mermaid)](docs/ARCHITECTURE-MERMAID.md)
 
----
+Workflows:
 
-## Terraform
+- [DNS Lifecycle](docs/LIFECYCLE.md)
+- [TSIG Rotation](docs/TSIG-ROTATION.md)
+- [Secrets Flow](docs/SECRETS-FLOW.md)
+- [CI Pipeline](docs/CI-PIPELINE.md)
 
-Located under:
+Operations:
 
-    technitium/terraform/
-
-Terraform automates:
-
-- VM creation
-- VMID allocation (4000–4999)
-- Cloud-init provisioning
-- DNS readiness checks
-- Zero-downtime cutover
-- Old VM destruction
-
-### VMID allocator
-
-    technitium/terraform/scripts/next-vmid.sh
-
-Finds next available VMID in 4000–4999.
+- [Operations Guide](docs/OPERATIONS.md)
+- [Outage Runbook](docs/OUTAGE-RUNBOOK.md)
 
 ---
 
-## Zero-Downtime Workflow
+## Key Features
 
-1. Create new VM at 172.16.100.7
-2. Configure via cloud-init + Ansible
-3. Validate DNS
-4. Stop old VM
-5. Swap IPs
-6. Destroy old VM
-
-DNS never goes offline.
+- Declarative DNS zones
+- Strict CI validation (syntax, diff, serials)
+- Git hook enforcement (secrets, commit-msg, pre-push)
+- Zero-downtime VM rebuilds
+- Automated TSIG rotation
+- RFC2136 dynamic updates
+- Full GitOps workflow
 
 ---
 
-## Deployment
+## Quick Commands
 
-Run:
+Validate zones:
+
+    make validate-zones
+
+Deploy:
 
     make deploy
 
+Install Git hooks:
+
+    make install-hooks
+    make verify-hooks
+
 ---
 
-## Summary
+## Zero-Downtime Rebuild
 
-This directory contains:
+All changes flow through:
 
-- Full Technitium automation
-- Cloud-init bootstrap
-- Ansible configuration
-- Terraform VM lifecycle
-- Zero-downtime rebuild logic
+Git → CI → Terraform → Proxmox → Cloud-init → Ansible → Technitium
 
-Everything is declarative.
+The system automatically cuts over to a new VM without downtime.
+
+---
+
+## License
+
+Internal use only.
