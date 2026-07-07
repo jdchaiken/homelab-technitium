@@ -18,89 +18,122 @@ RESET  := \033[0m
 # Help Target
 ###############################################################################
 help: ## Show this help menu
-	@echo ""
-	@echo "$(BLUE)Available Makefile Commands$(RESET)"
-	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?##' Makefile | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(RESET) %s\n", $$1, $$2}'
-	@echo ""
+		@echo ""
+		@echo "$(BLUE)Available Makefile Commands$(RESET)"
+		@echo ""
+		@grep -E '^[a-zA-Z_-]+:.*?##' Makefile | \
+				awk 'BEGIN {FS = ":.*?## "}; {printf "  $(YELLOW)%-20s$(RESET) %s\n", $$1, $$2}'
+		@echo ""
 
 ###############################################################################
 # Ansible Operations
 ###############################################################################
 install: ## Run Technitium install playbook
-	$(ANSIBLE) install-technitium.yaml
+		$(ANSIBLE) install-technitium.yaml
 
 configure: ## Run Technitium configure playbook
-	$(ANSIBLE) configure-technitium.yaml
+		$(ANSIBLE) configure-technitium.yaml
 
 rebuild: ## Run full Ansible rebuild (install + configure)
-	$(ANSIBLE) install-technitium.yaml
-	$(ANSIBLE) configure-technitium.yaml
+		$(ANSIBLE) install-technitium.yaml
+		$(ANSIBLE) configure-technitium.yaml
 
 ###############################################################################
 # Zone Validation
 ###############################################################################
 validate-zones: ## Validate DNS zone files using named-checkzone
-	@echo "Validating zone files..."
-	@for z in dns/zones/*.zone; do \
-		origin=$$(basename "$$z" .zone); \
-		echo "Checking $$z"; \
-		named-checkzone "$$origin" "$$z"; \
-	done
-
+		@echo "Validating zone files..."
+		@for z in dns/zones/*.zone; do \
+				origin=$$(basename "$$z" .zone); \
+				echo "Checking $$z"; \
+				named-checkzone "$$origin" "$$z"; \
+		done
 
 ###############################################################################
 # Git Operations
 ###############################################################################
 pull: ## Pull latest infra repo changes
-	cd $(REPO_DIR) && git pull --rebase
+		cd $(REPO_DIR) && git pull --rebase
 
 ###############################################################################
 # Terraform Deployment
 ###############################################################################
 deploy: ## Deploy Technitium DNS via Terraform
-	cd terraform && terraform init && terraform apply -auto-approve
+		cd terraform && terraform init && terraform apply -auto-approve
 
 ###############################################################################
 # Developer Environment
 ###############################################################################
 verify-dev: ## Verify developer machine prerequisites
-	./verify-dev.sh
+		./verify-dev.sh
 
 install-dev: ## Bootstrap developer machine (Linux)
-	./bootstrap-dev.sh
+		./bootstrap-dev.sh
+
+###############################################################################
+# Git Hooks
+###############################################################################
+install-hooks: ## Install git-secrets and repo-specific Git hooks
+		@echo "$(BLUE)Installing git-secrets hooks...$(RESET)"
+		git secrets --install -f
+		git secrets --register-aws
+
+		@echo "$(BLUE)Installing custom Git hooks...$(RESET)"
+		install -m 755 hooks/pre-commit .git/hooks/pre-commit
+		install -m 755 hooks/pre-push .git/hooks/pre-push
+		install -m 755 hooks/commit-msg .git/hooks/commit-msg
+
+		@echo "$(GREEN)Git hooks installed successfully.$(RESET)"
+
+test-hooks: ## Test that Git hooks are functioning correctly
+		@echo "$(BLUE)Testing hooks with fake AWS key...$(RESET)"
+		echo "AKIA1234567890FAKEKEY" > hooks/test.txt
+		git add hooks/test.txt || true
+
+		@if git commit -m "hook test"; then \
+				echo "$(YELLOW)ERROR: Hooks did NOT block the commit.$(RESET)"; \
+				exit 1; \
+		else \
+				echo "$(GREEN)SUCCESS: Hooks blocked the commit.$(RESET)"; \
+		fi
+
+		rm -f hooks/test.txt
+		git reset --hard HEAD
+
+verify-hooks: ## Verify installed Git hooks match repository versions
+		hooks/verify-hooks.sh
 
 ###############################################################################
 # Secret Scanning
 ###############################################################################
 scan-secrets: ## Run detect-secrets and git-secrets scans
-	detect-secrets scan > .detect-secrets.json
-	git secrets --scan
+		detect-secrets scan > .detect-secrets.json
+		git secrets --scan
 
 verify-secrets: ## Validate secrets baseline
-	detect-secrets-hook --baseline .detect-secrets.json
-	git secrets --scan
+		detect-secrets-hook --baseline .detect-secrets.json
+		git secrets --scan
 
 ###############################################################################
 # Linting
 ###############################################################################
 lint: ## Run all linters (shell, YAML, Terraform)
-	@echo "$(BLUE)Linting shell scripts...$(RESET)"
-	@shellcheck dns/scripts/*.sh || true
-	@shellcheck technitium/terraform/scripts/*.sh || true
+		@echo "$(BLUE)Linting shell scripts...$(RESET)"
+		@shellcheck dns/scripts/*.sh || true
+		@shellcheck technitium/terraform/scripts/*.sh || true
 
-	@echo "$(BLUE)Linting YAML...$(RESET)"
-	@yamllint technitium/ansible || true
-	@yamllint technitium/cloud-init || true
+		@echo "$(BLUE)Linting YAML...$(RESET)"
+		@yamllint technitium/ansible || true
+		@yamllint technitium/cloud-init || true
 
-	@echo "$(BLUE)Linting Terraform...$(RESET)"
-	@cd technitium/terraform && terraform fmt -check && terraform validate
+		@echo "$(BLUE)Linting Terraform...$(RESET)"
+		@cd technitium/terraform && terraform fmt -check && terraform validate
 
-	@echo "$(GREEN)Lint complete.$(RESET)"
+		@echo "$(GREEN)Lint complete.$(RESET)"
 
 ###############################################################################
 # PHONY DECLARATIONS
 ###############################################################################
 .PHONY: install configure validate-zones rebuild pull deploy \
-		verify-dev install-dev scan-secrets verify-secrets lint help
+				verify-dev install-dev scan-secrets verify-secrets lint help \
+				install-hooks test-hooks verify-hooks

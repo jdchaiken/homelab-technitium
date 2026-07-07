@@ -1,6 +1,6 @@
 # Developer Quickstart
 
-This guide helps developers contribute safely.
+This guide helps developers contribute safely to the GitOps DNS platform.
 
 ---
 
@@ -9,31 +9,53 @@ This guide helps developers contribute safely.
     git clone <repo>
     cd <repo>
 
+Install Git hooks (required):
+
+    make install-hooks
+    make verify-hooks
+
 ---
 
 # 2. Make DNS Changes
 
-Edit:
+Edit zone files:
 
     dns/zones/<domain>.zone
+
+Only modify DNS records and SOA serials.
 
 ---
 
 # 3. Update Serial
 
+Run the serial update script:
+
     dns/scripts/update-serials.sh
+
+This ensures all modified zones have correctly incremented SOA serials.
 
 ---
 
-# 4. Validate
+# 4. Validate Zones
 
     make validate-zones
 
+This runs named-checkzone against all zone files.
+
 ---
 
-# 5. Commit + Push
+# 5. Commit and Push
 
-CI/CD validates strict mode.
+Git hooks will block:
+- secrets
+- .env files
+- .tfvars
+- .tfstate
+- TSIG secrets
+- SSH private keys
+- invalid commit messages
+
+CI/CD enforces strict zone validation and SOA rules.
 
 ---
 
@@ -41,11 +63,18 @@ CI/CD validates strict mode.
 
     make deploy
 
+This performs a zero-downtime rebuild of the Technitium DNS server.
+
 ---
 
 # Summary
 
 Developers only modify:
 
-- Zone files
+- DNS zone files
 - Secret IDs (never secrets)
+- Terraform variables when required
+
+Always ensure Git hooks remain installed and up to date:
+
+    make verify-hooks

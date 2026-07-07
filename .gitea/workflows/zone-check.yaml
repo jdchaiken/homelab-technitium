@@ -3,14 +3,16 @@ name: Zone File Validation (Combined)
 on:
   push:
     paths:
-      - "infra/technitium/zones/**"
-      - "infra/technitium/scripts/**"
+      - "infra/technitium/dns/zones/**"
+      - "infra/technitium/dns/scripts/**"
       - "infra/technitium/Makefile"
+      - "infra/technitium/hooks/**"
   pull_request:
     paths:
-      - "infra/technitium/zones/**"
-      - "infra/technitium/scripts/**"
+      - "infra/technitium/dns/zones/**"
+      - "infra/technitium/dns/scripts/**"
       - "infra/technitium/Makefile"
+      - "infra/technitium/hooks/**"
 
 jobs:
   zone-check:
@@ -22,10 +24,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install bind-utils
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bind9-utils
+          sudo apt-get install -y bind9-utils shellcheck yamllint terraform
+
+      - name: Verify Git hook integrity
+        run: |
+          chmod +x infra/technitium/hooks/verify-hooks.sh
+          infra/technitium/hooks/verify-hooks.sh
+
+      - name: Run detect-secrets baseline validation
+        run: |
+          pip install detect-secrets
+          detect-secrets-hook --baseline infra/technitium/.detect-secrets.json
+
+      - name: Run git-secrets scan
+        run: |
+          git secrets --scan
 
       - name: Run syntax validation (make validate-zones)
         run: |
@@ -35,16 +51,22 @@ jobs:
       - name: Run strict zone diff checker
         run: |
           cd infra/technitium
-          bash scripts/zone-diff-strict.sh
+          bash dns/scripts/zone-diff-strict.sh
 
       - name: Save diff output
         id: diff
         run: |
           cd infra/technitium
-          bash scripts/zone-diff.sh > diff_output.txt || true
+          bash dns/scripts/zone-diff.sh > diff_output.txt || true
 
       - name: Upload diff as artifact
         uses: actions/upload-artifact@v3
         with:
           name: zone-diff
           path: infra/technitium/diff_output.txt
+
+      - name: Validate Terraform (optional)
+        run: |
+          cd infra/technitium/technitium/terraform
+          terraform init -input=false
+          terraform validate

@@ -4,6 +4,13 @@ Quick reference for daily operations.
 
 ---
 
+# Initial Setup (one time)
+
+    make install-hooks
+    make verify-hooks
+
+---
+
 # Validate DNS
 
     dig @172.16.100.6 SOA

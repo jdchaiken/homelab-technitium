@@ -1,94 +1,51 @@
-# Onboarding Guide – GitOps DNS Platform
+# Developer Quickstart
 
-Welcome to the GitOps DNS platform. This guide will get you fully onboarded.
-
----
-
-# 1. Prerequisites
-
-You need:
-
-- Access to the Git repo
-- Access to Proxmox
-- Access to Bitwarden Secrets Manager
-- SSH keys for Terraform/Ansible
-- Gitea account
+This guide helps developers contribute safely.
 
 ---
 
-# 2. Clone the Repo
+# 1. Clone Repo
 
-    git clone <repo-url>
+    git clone <repo>
     cd <repo>
 
 ---
 
-# 3. Understand the Structure
-
-    dns/            # DNS zones + validation
-    technitium/     # Ansible, cloud-init, Terraform
-    secrets/        # Bitwarden env templates
-
----
-
-# 4. Configure Secrets
-
-Copy:
-
-    secrets/bw.env.sample
-
-Into Proxmox:
-
-    /etc/pve/technitium/bw.env
-
-Set:
-
-- BW_TOKEN
-- BW_ORGID
-- BW_PROJECTID
-
----
-
-# 5. Configure Terraform
+# 2. Make DNS Changes
 
 Edit:
 
-    technitium/terraform/terraform.tfvars
-
-Set:
-
-- pm_api_url
-- pm_user
-- pm_password
-- pm_node
-- cloudinit_template
-- ssh_pubkey
-- ssh_privkey
-- old_vm_id
+    dns/zones/<domain>.zone
 
 ---
 
-# 6. Validate DNS
+# 3. Update Serial
+
+    dns/scripts/update-serials.sh
+
+---
+
+# 4. Validate
 
     make validate-zones
 
 ---
 
-# 7. Deploy
+# 5. Commit + Push
+
+CI/CD validates strict mode.
+
+---
+
+# 6. Deploy
 
     make deploy
 
-This performs a zero-downtime rebuild.
-
 ---
 
-# 8. Validate DNS After Deployment
+# Summary
 
-    dig @172.16.100.6 SOA
-    dig @172.16.100.6 <hostname> A
+Developers only modify:
 
----
-
-# 9. Summary
-
-You are now fully onboarded.
+- Zone files
+- Secret IDs (never secrets)

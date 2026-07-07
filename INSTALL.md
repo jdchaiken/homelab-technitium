@@ -96,6 +96,52 @@ These tools are used by `make scan-secrets` and `make verify-secrets`.
         git secrets --install
         git secrets --register-aws
 
+15. Git Hooks (git-secrets + repo-specific enforcement)
+
+This repository uses Git hooks to prevent committing or pushing sensitive files,
+enforce semantic commit messages, and ensure secret-scanning tools run on all
+developer machines.
+
+Git hooks are local to each clone. They live inside:
+
+    .git/hooks/
+
+They are not versioned and must be installed manually after cloning.
+
+Install all hooks:
+
+    make install-hooks
+
+This installs:
+- git-secrets hooks (pre-commit, pre-push, commit-msg)
+- repo-specific hooks stored in the repository under hooks/
+
+Installed hooks appear in:
+
+    .git/hooks/pre-commit
+    .git/hooks/pre-push
+    .git/hooks/commit-msg
+
+Test hook functionality:
+
+    make test-hooks
+
+This command attempts to commit a fake AWS key. If hooks are installed correctly,
+the commit will be blocked.
+
+Repository hook sources:
+
+    hooks/pre-commit
+    hooks/pre-push
+    hooks/commit-msg
+
+These files are copied into .git/hooks/ by make install-hooks.
+
+Important:
+
+Do not place hooks in .gitea/hooks. That directory is for server-side Gitea
+administrators and is not used by Git on developer machines.
+
 Verification Commands
 ---------------------
 
