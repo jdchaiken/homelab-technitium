@@ -1,152 +1,88 @@
-# GitOps DNS Infrastructure
+# GitOps DNS Platform
 
-This repository implements a fully declarative, GitOps-managed DNS system using:
+A fully declarative, GitOps-driven DNS platform built on Technitium DNS,
+Terraform, Proxmox, Cloud-init, Ansible, and Gitea CI/CD.
 
-- Technitium DNS Server (authoritative)
-- Terraform (VM lifecycle + zero-downtime rebuilds)
-- Proxmox (virtualization)
-- Cloud-init (bootstrap)
-- Ansible (configuration)
-- Bitwarden Secrets Manager (TSIG + API secrets)
-- Gitea Actions (CI/CD validation)
-- Strict DNS policy enforcement (SOA increments, drift detection)
+This repository manages:
 
-Everything is reproducible. Destroy the VM, run `make deploy`, and the DNS server
-is rebuilt exactly from Git + Bitwarden.
+- Authoritative DNS zones
+- Technitium DNS server configuration
+- VM lifecycle (Terraform + Proxmox)
+- Secrets (Bitwarden → Proxmox → Cloud-init → Ansible)
+- CI/CD validation and enforcement
 
----
-
-## Repository Structure
-
-    dns/
-      zones/          # Authoritative zone files
-      scripts/        # zone-diff, strict checker, serial updater
-      ci/             # Gitea workflows
-
-    technitium/
-      ansible/        # install + configure playbooks
-      cloud-init/     # technitium-user.yaml
-      terraform/      # VM lifecycle automation
-        scripts/      # VMID allocator
-
-    secrets/          # Bitwarden env templates
-
-    Makefile          # Local operator commands
-    INSTALL.md        # Full installation guide
-    POST-INSTALL.md   # Post-deployment tasks
-    PROXMOX_VM_TEMPLATE.md
-    README.md         # This file
+Everything is reproducible, version-controlled, and zero-downtime.
 
 ---
 
-## GitOps Workflow
+## Documentation
 
-1. Edit zone files under `dns/zones/`
-2. Run strict validation:
-       dns/scripts/zone-diff-strict.sh
-3. Commit + push
-4. CI/CD validates:
-       - Syntax
-       - Serial increments
-       - Drift
-5. Deploy:
-       make deploy
+Start here:
 
-Terraform:
+- [Getting Started](docs/GETTING-STARTED.md)
+- [Onboarding Guide](docs/ONBOARDING.md)
+- [Developer Quickstart](docs/DEV-QUICKSTART.md)
+- [Operator Cheat Sheet](docs/CHEATSHEET.md)
 
-- Allocates VMID (4000–4999)
-- Creates temporary VM (172.16.100.7)
-- Applies cloud-init
-- Runs Ansible
-- Validates DNS
-- Shuts down old VM
-- Swaps IPs
-- Destroys old VM
+Architecture:
 
-Zero downtime.
+- [Architecture Overview](docs/ARCHITECTURE.md)
+- [Architecture Diagram](docs/ARCHITECTURE-DIAGRAM.md)
+- [Architecture (Mermaid)](docs/ARCHITECTURE-MERMAID.md)
 
----
+Workflows:
 
-## TSIG Key Management
+- [DNS Lifecycle](docs/LIFECYCLE.md)
+- [TSIG Rotation](docs/TSIG-ROTATION.md)
+- [Secrets Flow](docs/SECRETS-FLOW.md)
+- [CI Pipeline](docs/CI-PIPELINE.md)
 
-TSIG keys are stored in Bitwarden Secrets Manager.
+Operations:
 
-Ansible fetches:
-
-- TSIG Name
-- TSIG Algorithm
-- TSIG Secret
-
-Using Secret IDs.
-
-TSIG rotation uses the same GitOps rebuild workflow.
+- [Operations Guide](docs/OPERATIONS.md)
+- [Outage Runbook](docs/OUTAGE-RUNBOOK.md)
 
 ---
 
-## VMID Allocation
+## Key Features
 
-GitOps-managed VMIDs live in the 4000–4999 range.
-
-Script:
-
-    technitium/terraform/scripts/next-vmid.sh
-
-Finds the next available VMID.
-
-If all are used, wraps back to 4000.
+- Declarative DNS zones
+- Strict CI validation (syntax, diff, serials)
+- Git hook enforcement (secrets, commit-msg, pre-push)
+- Zero-downtime VM rebuilds
+- Automated TSIG rotation
+- RFC2136 dynamic updates
+- Full GitOps workflow
 
 ---
 
-## Zero-Downtime Rebuild
-
-Terraform performs:
-
-1. Create new VM at 172.16.100.7
-2. Configure via cloud-init + Ansible
-3. Validate DNS
-4. Stop old VM
-5. Swap IPs
-6. Destroy old VM
-
-DNS never goes offline.
-
----
-
-## Commands
+## Quick Commands
 
 Validate zones:
 
     make validate-zones
 
-Strict validation:
-
-    dns/scripts/zone-diff-strict.sh
-
 Deploy:
 
     make deploy
 
-Update serials:
+Install Git hooks:
 
-    dns/scripts/update-serials.sh
-
-Rotate TSIG:
-
-    dns/scripts/rotate-tsig.sh
+    make install-hooks
+    make verify-hooks
 
 ---
 
-## Summary
+## Zero-Downtime Rebuild
 
-This repository provides:
+All changes flow through:
 
-- Declarative DNS
-- Declarative VM lifecycle
-- Declarative secrets
-- Declarative configuration
-- Strict CI/CD validation
-- Zero-downtime rebuilds
+Git → CI → Terraform → Proxmox → Cloud-init → Ansible → Technitium
 
-Everything is automated.
-Everything is reproducible.
-Everything is safe.
+The system automatically cuts over to a new VM without downtime.
+
+---
+
+## License
+
+Internal use only.
