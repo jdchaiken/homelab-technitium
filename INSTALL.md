@@ -65,18 +65,24 @@ Required Tools
 11. make  
    Required to run the Makefile automation.
 
+12. bind9-utils
+    Required for DNS zone validation using named-checkzone.
+    Install on Debian/Ubuntu:
+        sudo apt install -y bind9-utils
+
+
 Security Tools (Required)
 -------------------------
 
 These tools are used by `make scan-secrets` and `make verify-secrets`.
 
-12. detect-secrets  
+13. detect-secrets  
     Used to scan the repository for accidental secret leaks.  
     Install via pipx (recommended):
 
         pipx install detect-secrets
 
-13. git-secrets  
+14. git-secrets  
     Used to prevent committing secrets to the repository.  
     Install from GitHub (Ubuntu/Debian):
 

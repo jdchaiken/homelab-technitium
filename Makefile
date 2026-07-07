@@ -42,11 +42,13 @@ rebuild: ## Run full Ansible rebuild (install + configure)
 # Zone Validation
 ###############################################################################
 validate-zones: ## Validate DNS zone files using named-checkzone
-	@echo "$(BLUE)Validating zone files...$(RESET)"
-	@for z in zones/*.zone; do \
+	@echo "Validating zone files..."
+	@for z in dns/zones/*.zone; do \
+		origin=$$(basename "$$z" .zone); \
 		echo "Checking $$z"; \
-		named-checkzone "$${z%.zone}" "$$z"; \
+		named-checkzone "$$origin" "$$z"; \
 	done
+
 
 ###############################################################################
 # Git Operations

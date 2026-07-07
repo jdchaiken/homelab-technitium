@@ -11,7 +11,7 @@ $TTL 300
 ns1     IN A    172.16.100.6
 
 ; --- Internal LoadBalancer Services ---
-ldap            IN A    10.30.0.3
+ldap    IN A    10.30.0.3
 
 ; --- TXT registry for ExternalDNS ---
 externaldns     IN TXT  "managed"

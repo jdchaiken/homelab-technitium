@@ -11,13 +11,13 @@ $TTL 300
 ns1     IN A    172.16.100.6
 
 ; --- Bare-metal & Storage Infrastructure ---
-pbs         IN A    172.16.70.2
-pve01       IN A    172.16.70.204
-pve02       IN A    172.16.70.201
-pve03       IN A    172.16.70.203
-pve04       IN A    172.16.70.205
-nas01       IN A    172.16.70.241
-nas02       IN A    172.16.70.243
+pbs     IN A    172.16.70.2
+pve01   IN A    172.16.70.204
+pve02   IN A    172.16.70.201
+pve03   IN A    172.16.70.203
+pve04   IN A    172.16.70.205
+nas01   IN A    172.16.70.241
+nas02   IN A    172.16.70.243
 
 ; --- TXT registry for ExternalDNS coexistence ---
 externaldns IN TXT  "managed"
