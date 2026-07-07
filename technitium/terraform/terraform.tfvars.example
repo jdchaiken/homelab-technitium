@@ -14,7 +14,8 @@ ssh_privkey = "~/.ssh/id_ed25519"
 old_vm_id = 4000
 
 # IP configuration
-TEMP_VM_IP  = "X.X.X.X"
-PROD_VM_IP  = "Y.Y.Y.Y"
-GATEWAY_IP  = "Z.Z.Z.Z"
-UNBOUND_IP  = "A.A.A.A"
+temp_vm_ip  = "X.X.X.X"
+prod_vm_ip  = "Y.Y.Y.Y"
+gateway_ip  = "Z.Z.Z.Z"
+unbound_ip  = "A.A.A.A"
+

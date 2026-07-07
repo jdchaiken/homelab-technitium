@@ -1,12 +1,10 @@
 ###############################################################################
 # Technitium GitOps Makefile
-#
-# Default behavior: show help
 ###############################################################################
 .DEFAULT_GOAL := help
 
-REPO_DIR := /opt/infra/technitium
 ANSIBLE := ansible-playbook
+REPO_DIR := /opt/infra/technitium
 
 # Colors
 GREEN  := \033[0;32m
@@ -15,7 +13,7 @@ BLUE   := \033[0;34m
 RESET  := \033[0m
 
 ###############################################################################
-# Help Target
+# Help
 ###############################################################################
 help: ## Show this help menu
 		@echo ""
@@ -39,7 +37,7 @@ rebuild: ## Run full Ansible rebuild (install + configure)
 		$(ANSIBLE) configure-technitium.yaml
 
 ###############################################################################
-# Zone Validation
+# DNS Zone Validation
 ###############################################################################
 validate-zones: ## Validate DNS zone files using named-checkzone
 		@echo "Validating zone files..."
@@ -59,16 +57,17 @@ pull: ## Pull latest infra repo changes
 # Terraform Deployment
 ###############################################################################
 deploy: ## Deploy Technitium DNS via Terraform
-		cd terraform && terraform init && terraform apply -auto-approve
+		cd technitium/terraform && terraform init && terraform apply -auto-approve -var-file=local/terraform.tfvars
+
 
 ###############################################################################
 # Developer Environment
 ###############################################################################
 verify-dev: ## Verify developer machine prerequisites
-		./verify-dev.sh
+		scripts/verify-dev.sh
 
 install-dev: ## Bootstrap developer machine (Linux)
-		./bootstrap-dev.sh
+		scripts/bootstrap-dev.sh
 
 ###############################################################################
 # Git Hooks
@@ -119,21 +118,21 @@ verify-secrets: ## Validate secrets baseline
 ###############################################################################
 lint: ## Run all linters (shell, YAML, Terraform)
 		@echo "$(BLUE)Linting shell scripts...$(RESET)"
-		@shellcheck dns/scripts/*.sh || true
-		@shellcheck technitium/terraform/scripts/*.sh || true
+		-@shellcheck dns/scripts/*.sh
+		-@shellcheck technitium/terraform/scripts/*.sh
 
 		@echo "$(BLUE)Linting YAML...$(RESET)"
-		@yamllint technitium/ansible || true
-		@yamllint technitium/cloud-init || true
+		-@yamllint technitium/ansible
+		-@yamllint technitium/cloud-init
 
 		@echo "$(BLUE)Linting Terraform...$(RESET)"
-		@cd technitium/terraform && terraform fmt -check && terraform validate
+		@cd technitium/terraform && terraform fmt -check -no-color && terraform validate -no-color
 
 		@echo "$(GREEN)Lint complete.$(RESET)"
 
 ###############################################################################
-# PHONY DECLARATIONS
+# Phony Targets
 ###############################################################################
-.PHONY: install configure validate-zones rebuild pull deploy \
-				verify-dev install-dev scan-secrets verify-secrets lint help \
-				install-hooks test-hooks verify-hooks
+.PHONY: install configure rebuild validate-zones pull deploy \
+		verify-dev install-dev scan-secrets verify-secrets lint help \
+		install-hooks test-hooks verify-hooks

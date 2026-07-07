@@ -30,3 +30,18 @@ variable "ssh_privkey" {
 variable "old_vm_id" {
   description = "VMID of the current production Technitium VM"
 }
+variable "temp_vm_ip" {
+  description = "Temporary VM IP address"
+}
+
+variable "prod_vm_ip" {
+  description = "Production VM IP address"
+}
+
+variable "gateway_ip" {
+  description = "Gateway IP address"
+}
+
+variable "unbound_ip" {
+  description = "Unbound/BIND recursive resolver IP"
+}

@@ -15,7 +15,7 @@ if git diff --cached --name-only | grep -q ".env"; then
 fi
 
 # Block committing Terraform secrets
-if git diff --cached --name-only | grep -q ".tfvars"; then
+if git diff --cached --name-only | grep -q ".tfvars$"; then
     echo "ERROR: .tfvars files cannot be committed."
     exit 1
 fi
