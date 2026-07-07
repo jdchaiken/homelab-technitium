@@ -20,7 +20,7 @@
 # Terraform reads this via data.external and converts it to a number.
 ###############################################################################
 data "external" "vmid" {
-  program = ["bash", "${path.module}/scripts/next-vmid.sh"]
+  program = ["ssh", "root@${var.pm_node}", "/opt/infra/technitium/next-vmid.sh"]
 }
 
 locals {

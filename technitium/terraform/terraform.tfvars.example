@@ -6,6 +6,8 @@ pm_user           = "root@pam"
 pm_password       = "CHANGEME"
 pm_node           = "pve01"
 
+
+
 cloudinit_template = 9000
 
 ssh_pubkey  = "~/.ssh/id_ed25519.pub"

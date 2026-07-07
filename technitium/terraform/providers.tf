@@ -27,12 +27,24 @@ terraform {
 # Provider Configuration
 ###############################################################################
 
+## Password Authentication
 provider "proxmox" {
-  pm_api_url      = var.pm_api_url
-  pm_user         = var.pm_user
-  pm_password     = var.pm_password
-  pm_tls_insecure = true
+  pm_api_url        = var.pm_api_url
+  pm_user           = var.pm_user
+  pm_password       = var.pm_password
+  pm_api_token_id   = ""              # forces password mode
+  pm_tls_insecure   = true
 }
+
+## Token Authentication
+# provider "proxmox" {
+#   pm_api_url  = var.pm_api_url
+#   pm_user     = "root@pam!terraform"
+#   pm_api_token_id = "terraform"
+#   pm_api_token_secret = var.pm_password
+#   pm_tls_insecure = true
+# }
+
 
 provider "null" {}
 
