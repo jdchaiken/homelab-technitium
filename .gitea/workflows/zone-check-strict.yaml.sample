@@ -1,0 +1,31 @@
+name: Strict Zone File Validation
+
+on:
+  push:
+    paths:
+      - "infra/technitium/zones/**"
+      - "infra/technitium/scripts/**"
+  pull_request:
+    paths:
+      - "infra/technitium/zones/**"
+      - "infra/technitium/scripts/**"
+
+jobs:
+  zone-check-strict:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install bind-utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bind9-utils
+
+      - name: Run strict zone diff checker
+        run: |
+          cd infra/technitium
+          bash scripts/zone-diff-strict.sh

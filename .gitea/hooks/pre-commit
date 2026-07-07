@@ -1,0 +1,42 @@
+#!/bin/bash
+
+echo "Running pre-commit secret scan..."
+
+# Block committing Bitwarden secrets
+if git diff --cached --name-only | grep -q "secrets/bw.env"; then
+    echo "ERROR: secrets/bw.env cannot be committed."
+    exit 1
+fi
+
+# Block committing .env files
+if git diff --cached --name-only | grep -q ".env"; then
+    echo "ERROR: .env files cannot be committed."
+    exit 1
+fi
+
+# Block committing Terraform secrets
+if git diff --cached --name-only | grep -q ".tfvars"; then
+    echo "ERROR: .tfvars files cannot be committed."
+    exit 1
+fi
+
+# Block committing SSH private keys
+if git diff --cached --name-only | grep -E -q "id_rsa|id_ed25519"; then
+    echo "ERROR: SSH private keys cannot be committed."
+    exit 1
+fi
+
+# Block committing TSIG secrets
+if git diff --cached --name-only | grep -q "tsig"; then
+    echo "ERROR: TSIG secrets cannot be committed."
+    exit 1
+fi
+
+# Block committing Terraform state
+if git diff --cached --name-only | grep -q ".tfstate"; then
+    echo "ERROR: Terraform state cannot be committed."
+    exit 1
+fi
+
+echo "Pre-commit checks passed."
+exit 0

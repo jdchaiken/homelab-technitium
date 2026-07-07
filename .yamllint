@@ -1,0 +1,24 @@
+extends: default
+
+rules:
+  # Allow truthy values (Ansible uses them)
+  truthy:
+    level: warning
+
+  # Allow long lines up to 160 chars (Ansible often uses long commands)
+  line-length:
+    max: 160
+    level: warning
+
+  # Cloud-init does not require '---'
+  document-start:
+    level: warning
+
+  # Comments without a space are fine
+  comments:
+    # min-spaces: 0
+    level: warning
+
+  # Don't require indentation for sequences
+  indentation:
+    indent-sequences: true

@@ -1,0 +1,26 @@
+$TTL 300
+@       IN SOA  ns1.example.com. admin.example.com. (
+            2024070601 ; serial
+            3600
+            1800
+            604800
+            300
+        )
+
+        IN NS   ns1.example.com.
+ns1     IN A    172.16.100.6
+
+; --- Internal LoadBalancer Services (manual records) ---
+ldap            IN A    10.30.0.3
+git             IN A    10.30.0.4
+alloy           IN A    10.30.0.10
+
+; --- ExternalDNS will dynamically manage Gateway API hostnames ---
+; DO NOT manually define:
+; n8n
+; headlamp
+; openwebui
+; searxng
+; shields
+
+externaldns     IN TXT  "managed"

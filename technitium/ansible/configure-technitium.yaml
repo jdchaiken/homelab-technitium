@@ -1,0 +1,138 @@
+---
+- name: Configure Technitium DNS Server declaratively
+  hosts: localhost
+  become: true
+
+  vars:
+    technitium_api: "http://localhost:5380/api"
+    zone_path: "/opt/infra/technitium/zones"
+
+    # Bitwarden Secrets Manager API
+    bw_api_url: "https://api.bitwarden.com/secrets"
+
+    # You will paste your real secret UUIDs here
+    tsig_name_secret_id: "TSIG_NAME_SECRET_ID_HERE"
+    tsig_algorithm_secret_id: "TSIG_ALGORITHM_SECRET_ID_HERE"
+    tsig_secret_secret_id: "TSIG_SECRET_SECRET_ID_HERE"
+
+  tasks:
+    - name: Wait for Technitium API to become available
+      uri:
+        url: "{{ technitium_api }}/status"
+        method: GET
+        status_code: 200
+      register: api_status
+      retries: 10
+      delay: 3
+      until: api_status.status == 200
+
+    - name: Load Bitwarden env into Ansible
+      set_fact:
+        bw_token: "{{ lookup('env', 'BW_TOKEN') }}"
+        bw_orgid: "{{ lookup('env', 'BW_ORGID') }}"
+        bw_projectid: "{{ lookup('env', 'BW_PROJECTID') }}"
+
+    - name: Fetch TSIG name from Bitwarden Secrets Manager
+      uri:
+        url: "{{ bw_api_url }}/{{ tsig_name_secret_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ bw_token }}"
+        return_content: true
+      register: tsig_name_resp
+
+    - name: Fetch TSIG algorithm from Bitwarden Secrets Manager
+      uri:
+        url: "{{ bw_api_url }}/{{ tsig_algorithm_secret_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ bw_token }}"
+        return_content: true
+      register: tsig_algorithm_resp
+
+    - name: Fetch TSIG secret from Bitwarden Secrets Manager
+      uri:
+        url: "{{ bw_api_url }}/{{ tsig_secret_secret_id }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ bw_token }}"
+        return_content: true
+      register: tsig_secret_resp
+
+    - name: Set TSIG facts
+      set_fact:
+        tsig_name: "{{ tsig_name_resp.json.data.value }}"
+        tsig_algorithm: "{{ tsig_algorithm_resp.json.data.value }}"
+        tsig_secret: "{{ tsig_secret_resp.json.data.value }}"
+
+    - name: Configure upstream resolver (Unbound)
+      uri:
+        url: "{{ technitium_api }}/settings/set"
+        method: POST
+        body_format: json
+        body:
+          RecursiveDnsServers:
+            - "172.16.10.1"
+          EnableRecursion: true
+          EnableDnsSecValidation: true
+        status_code: 200
+
+    - name: Configure ACLs
+      uri:
+        url: "{{ technitium_api }}/settings/set"
+        method: POST
+        body_format: json
+        body:
+          AllowRecursionFrom:
+            - "172.16.0.0/12"
+            - "192.168.200.0/20"
+            - "192.168.0.0/17"
+          AllowZoneTransferFrom:
+            - "172.16.0.0/12"
+            - "192.168.200.0/20"
+            - "192.168.0.0/17"
+        status_code: 200
+
+    - name: Configure logging
+      uri:
+        url: "{{ technitium_api }}/settings/set"
+        method: POST
+        body_format: json
+        body:
+          EnableQueryLogging: true
+          EnableApiLogging: true
+        status_code: 200
+
+    - name: Configure TSIG key for RFC2136
+      uri:
+        url: "{{ technitium_api }}/tsig/add"
+        method: POST
+        body_format: json
+        body:
+          Name: "{{ tsig_name }}"
+          Algorithm: "{{ tsig_algorithm }}"
+          Secret: "{{ tsig_secret }}"
+        status_code: 200
+
+    - name: Load zone files
+      loop:
+        - example.com.zone
+        - example.net.zone
+        - storage.example.com.zone
+      uri:
+        url: "{{ technitium_api }}/zone/import"
+        method: POST
+        body_format: form-multipart
+        body:
+          zone: "{{ lookup('file', zone_path + '/' + item) }}"
+          name: "{{ item | regex_replace('\\.zone$', '') }}"
+        status_code: 200
+
+    - name: Restart Technitium DNS service
+      systemd:
+        name: dns.service
+        state: restarted
+
+    - name: Confirm configuration applied
+      debug:
+        msg: "Technitium DNS Server fully configured via Bitwarden Secrets Manager + GitOps."

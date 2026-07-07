@@ -1,0 +1,11 @@
+# ShellCheck configuration for GitOps DNS repository
+# Only suppress warnings that are safe and stylistic.
+
+# SC2231: Quote expansions in for-loop globs
+disable=SC2231
+
+# SC2004: Unnecessary $/${} in arithmetic expressions
+disable=SC2004
+
+# SC2086: Quote variables to prevent globbing and word splitting
+disable=SC2086

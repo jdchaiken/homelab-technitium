@@ -1,0 +1,31 @@
+#!/bin/bash
+
+echo "Running pre-push checks..."
+
+FILES=$(git diff --cached --name-only)
+
+# Block secrets
+if echo "$FILES" | grep -q "secrets/bw.env"; then
+    echo "ERROR: secrets/bw.env cannot be pushed."
+    exit 1
+fi
+
+if echo "$FILES" | grep -q ".env"; then
+    echo "ERROR: .env files cannot be pushed."
+    exit 1
+fi
+
+# Block Terraform state
+if echo "$FILES" | grep -q ".tfstate"; then
+    echo "ERROR: Terraform state cannot be pushed."
+    exit 1
+fi
+
+# Block TSIG secrets
+if echo "$FILES" | grep -qi "tsig"; then
+    echo "ERROR: TSIG secrets cannot be pushed."
+    exit 1
+fi
+
+echo "Pre-push checks passed."
+exit 0

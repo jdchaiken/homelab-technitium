@@ -1,0 +1,50 @@
+name: Zone File Validation (Combined)
+
+on:
+  push:
+    paths:
+      - "infra/technitium/zones/**"
+      - "infra/technitium/scripts/**"
+      - "infra/technitium/Makefile"
+  pull_request:
+    paths:
+      - "infra/technitium/zones/**"
+      - "infra/technitium/scripts/**"
+      - "infra/technitium/Makefile"
+
+jobs:
+  zone-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install bind-utils
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bind9-utils
+
+      - name: Run syntax validation (make validate-zones)
+        run: |
+          cd infra/technitium
+          make validate-zones
+
+      - name: Run strict zone diff checker
+        run: |
+          cd infra/technitium
+          bash scripts/zone-diff-strict.sh
+
+      - name: Save diff output
+        id: diff
+        run: |
+          cd infra/technitium
+          bash scripts/zone-diff.sh > diff_output.txt || true
+
+      - name: Upload diff as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: zone-diff
+          path: infra/technitium/diff_output.txt

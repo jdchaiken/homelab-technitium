@@ -1,0 +1,62 @@
+---
+- name: Install Technitium DNS Server on Debian 13
+  hosts: localhost
+  become: true
+
+  vars:
+    technitium_version: "11.0"
+    technitium_url: "https://download.technitium.com/dns/DnsServer_{{ technitium_version }}_amd64.deb"
+
+  tasks:
+    - name: Ensure required packages are installed
+      apt:
+        name:
+          - curl
+          - wget
+          - ca-certificates
+          - systemd
+          - unzip
+        state: present
+        update_cache: true
+
+    - name: Download Technitium DNS Server .deb package
+      get_url:
+        url: "{{ technitium_url }}"
+        dest: "/tmp/technitium.deb"
+        mode: "0644"
+
+    - name: Install Technitium DNS Server
+      apt:
+        deb: "/tmp/technitium.deb"
+        state: present
+
+    - name: Ensure Technitium directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /etc/dns
+        - /var/lib/dns
+        - /var/log/dns
+
+    - name: Enable Technitium DNS Server service
+      systemd:
+        name: dns.service
+        enabled: true
+
+    - name: Start Technitium DNS Server service
+      systemd:
+        name: dns.service
+        state: started
+
+    - name: Clean up installer
+      file:
+        path: "/tmp/technitium.deb"
+        state: absent
+
+    - name: Confirm installation
+      debug:
+        msg: "Technitium DNS Server {{ technitium_version }} installed and running."

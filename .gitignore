@@ -1,0 +1,55 @@
+### dotenv ###
+.env
+
+### Linux ###
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+### Terraform ###
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+### Bitwarden ###
+secrets/bw.env
+
+### Cloud-init ###
+*.cidata
+cloud-init-output.log
+
+### Ansible ###
+*.retry
+
+### Editor / IDE ###
+.vscode/
+.idea/
+
+### DNS Scripts Output ###
+*.diff
+*.patch
+*.log
+*.zone.tmp
+
+### Python Cache ###
+__pycache__/
+*.pyc
+
+### macOS ###
+.DS_Store
+
+### Custom ###
+scripts/*.out
+scripts/*.tmp

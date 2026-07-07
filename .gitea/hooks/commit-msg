@@ -1,0 +1,17 @@
+#!/bin/bash
+
+MSG_FILE=$1
+MSG=$(cat "$MSG_FILE")
+
+if [ ${#MSG} -lt 5 ]; then
+    echo "ERROR: Commit message too short."
+    exit 1
+fi
+
+if echo "$MSG" | grep -qiE "fix|update|changes"; then
+    echo "WARNING: Commit message is vague."
+    echo "Consider using semantic prefixes:"
+    echo "  feat:, fix:, docs:, chore:, refactor:, ci:, test:"
+fi
+
+exit 0
