@@ -1,11 +1,10 @@
 # INSTALL – GitOps DNS Infrastructure
 This guide explains how to install and bootstrap the GitOps DNS system.
-
 All manual edits are clearly marked with:
 
     YOU MUST EDIT THIS SECTION
 
-This ensures anyone can adapt the system to their own environment.
+Follow the steps in order. Do not skip ahead.
 
 ---------------------------------------------------------------------
 1. Requirements
@@ -23,153 +22,41 @@ You need:
 2. Developer Machine Requirements
 ---------------------------------------------------------------------
 
-Before running any commands in this repository, your workstation must
-have the following software installed:
+Install all required tools before using this repository.
 
-Required Tools
---------------
+Required Tools:
+- Terraform 1.6+
+- Ansible 2.15+
+- ansible-playbook
+- Git
+- SSH client
+- Python 3
+- pip or pipx
+- dig (dnsutils)
+- jq
+- yq
+- make
+- bind9-utils (named-checkzone)
 
-1. Terraform  
-   Required to run the VM lifecycle automation.  
-   Version: 1.6.x or later
+Security Tools:
+- detect-secrets
+- git-secrets
 
-2. Ansible  
-   Required to configure Technitium DNS inside the VM.  
-   Version: 2.15.x or later
-
-3. ansible-playbook  
-   Must be available on your PATH.
-
-4. Git  
-   Required to clone the repository and interact with CI/CD.
-
-5. SSH client  
-   Required for Terraform remote-exec and Ansible connections.
-
-6. Python 3  
-   Required for Ansible and helper scripts.
-
-7. pip or pipx  
-   Required to install Python-based tooling.
-
-8. dig (DNS utilities)  
-   Required for DNS validation and troubleshooting.  
-   Package: dnsutils (Debian/Ubuntu)
-
-9. jq  
-   Required for JSON parsing in scripts.
-
-10. yq  
-   Required for YAML parsing in scripts.
-
-11. make  
-   Required to run the Makefile automation.
-
-12. bind9-utils
-    Required for DNS zone validation using named-checkzone.
-    Install on Debian/Ubuntu:
-        sudo apt install -y bind9-utils
-
-
-Security Tools (Required)
--------------------------
-
-These tools are used by `make scan-secrets` and `make verify-secrets`.
-
-13. detect-secrets  
-    Used to scan the repository for accidental secret leaks.  
-    Install via pipx (recommended):
-
-        pipx install detect-secrets
-
-14. git-secrets  
-    Used to prevent committing secrets to the repository.  
-    Install from GitHub (Ubuntu/Debian):
-
-        sudo apt install git
-        sudo git clone https://github.com/awslabs/git-secrets.git /opt/git-secrets
-        cd /opt/git-secrets
-        sudo make install
-
-    Enable hooks:
-
-        git secrets --install
-        git secrets --register-aws
-
-15. Git Hooks (git-secrets + repo-specific enforcement)
-
-This repository uses Git hooks to prevent committing or pushing sensitive files,
-enforce semantic commit messages, and ensure secret-scanning tools run on all
-developer machines.
-
-Git hooks are local to each clone. They live inside:
-
-    .git/hooks/
-
-They are not versioned and must be installed manually after cloning.
-
-Install all hooks:
+Install Git hooks:
 
     make install-hooks
+    make verify-hooks
 
-This installs:
-- git-secrets hooks (pre-commit, pre-push, commit-msg)
-- repo-specific hooks stored in the repository under hooks/
-
-Installed hooks appear in:
-
-    .git/hooks/pre-commit
-    .git/hooks/pre-push
-    .git/hooks/commit-msg
-
-Test hook functionality:
-
-    make test-hooks
-
-This command attempts to commit a fake AWS key. If hooks are installed correctly,
-the commit will be blocked.
-
-Repository hook sources:
-
-    hooks/pre-commit
-    hooks/pre-push
-    hooks/commit-msg
-
-These files are copied into .git/hooks/ by make install-hooks.
-
-Important:
-
-Do not place hooks in .gitea/hooks. That directory is for server-side Gitea
-administrators and is not used by Git on developer machines.
-
-Verification Commands
----------------------
-
-Run these to confirm your environment is ready:
-
-    terraform -version
-    ansible --version
-    ansible-playbook --version
-    git --version
-    ssh -V
-    python3 --version
-    pip --version
-    dig -v
-    jq --version
-    yq --version
-    make -v
-    detect-secrets --version
-    git-secrets --version
-
-If any of these commands fail, install the missing software before
-continuing.
-
+Hooks enforce:
+- secret blocking
+- commit message rules
+- pre-push validation
 
 ---------------------------------------------------------------------
 3. Prepare Proxmox
 ---------------------------------------------------------------------
 
-3.1 Create secrets directory
+3.1 Create secrets directory:
 
     mkdir -p /etc/pve/technitium
     chmod 700 /etc/pve/technitium
@@ -186,7 +73,7 @@ Contents:
 
     BW_TOKEN="YOUR_BITWARDEN_SERVICE_ACCOUNT_TOKEN"
     BW_ORGID="YOUR_BITWARDEN_ORG_ID"
-    BW_PROJECTID="YOUR_BITWARDEN_PROJECT_ID"
+    BW_PROJECTID="YOUR_BITWARDARDEN_PROJECT_ID"
 
 Permissions:
 
@@ -198,17 +85,31 @@ Permissions:
 
 You need a Debian 13 cloud-init template VM.
 
-YOU MUST EDIT THIS SECTION
-
 Record your template VMID:
 
     cloudinit_template = <YOUR_TEMPLATE_VMID>
 
-Add the file:
+Add the cloud-init user-data file as a Proxmox snippet:
 
     technitium/cloud-init/technitium-user.yaml
 
-as a Proxmox snippet.
+Snippets must be placed in a storage that supports "Snippets".
+Recommended location:
+
+    /var/lib/vz/snippets/
+
+Copy the file:
+
+    cp technitium/cloud-init/technitium-user.yaml /var/lib/vz/snippets/
+
+Ensure "Snippets" is enabled:
+Datacenter → Storage → local → Content → check "Snippets".
+
+Terraform will reference the snippet:
+
+    cicustom = "user=local:snippets/technitium-user.yaml"
+
+This step is manual only once.
 
 ---------------------------------------------------------------------
 5. Configure Terraform
@@ -220,33 +121,62 @@ Edit:
 
 YOU MUST EDIT THIS SECTION
 
-Set:
+Set Proxmox connection:
 
     pm_api_url        = "https://your-proxmox.example.com:8006/api2/json"
     pm_user           = "root@pam"
     pm_password       = "CHANGEME"
     pm_node           = "pve01"
+
+Set cloud-init template VMID:
+
     cloudinit_template = 9000
+
+Set SSH keys:
 
     ssh_pubkey        = "~/.ssh/id_ed25519.pub"
     ssh_privkey       = "~/.ssh/id_ed25519"
 
+Set previous VM ID (for zero-downtime cutover):
+
     old_vm_id         = 4000
 
-Set IP placeholders:
+Set IP configuration:
 
-    TEMP_VM_IP  = "X.X.X.X"
-    PROD_VM_IP  = "Y.Y.Y.Y"
-    GATEWAY_IP  = "Z.Z.Z.Z"
-    UNBOUND_IP  = "A.A.A.A"
+    TEMP_VM_IP        = "X.X.X.X"
+    PROD_VM_IP        = "Y.Y.Y.Y"
+    GATEWAY_IP        = "Z.Z.Z.Z"
+    UNBOUND_IP        = "A.A.A.A"
+
+All values belong inside terraform.tfvars.
 
 ---------------------------------------------------------------------
-6. Configure TSIG Keys
+6. Initial Deployment (Creates Technitium)
+---------------------------------------------------------------------
+
+Run:
+
+    make deploy
+
+This performs the first full build:
+
+Terraform → Proxmox → Cloud-init → Ansible → Technitium
+
+After this step:
+- The VM exists
+- Technitium is installed
+- You can log in
+- You can create TSIG keys
+
+TSIG keys cannot be created before this step.
+
+---------------------------------------------------------------------
+7. Configure TSIG Keys
 ---------------------------------------------------------------------
 
 TSIG keys authenticate RFC2136 updates from ExternalDNS.
 
-6.1 Create TSIG key in Technitium
+7.1 Create TSIG key in Technitium
 
 1. Open Technitium UI
 2. Settings → TSIG Keys → Add
@@ -255,14 +185,14 @@ TSIG keys authenticate RFC2136 updates from ExternalDNS.
 5. Secret: Generate
 6. Save
 
-Copy:
+Record:
 - TSIG Name
 - TSIG Algorithm
 - TSIG Secret (base64)
 
-6.2 Store TSIG values in Bitwarden
+7.2 Store TSIG values in Bitwarden
 
-Create three secrets:
+Create secrets:
 
     externaldns-tsig-name
     externaldns-tsig-algorithm
@@ -270,7 +200,7 @@ Create three secrets:
 
 Copy their Secret IDs.
 
-6.3 Update Ansible
+7.3 Update Ansible
 
 Edit:
 
@@ -284,11 +214,23 @@ Set:
     tsig_algorithm_secret_id: "YOUR_SECRET_ID"
     tsig_secret_secret_id: "YOUR_SECRET_ID"
 
+Commit and push.
+
 ---------------------------------------------------------------------
-7. Configure DNS Zones
+8. Redeploy with TSIG Keys
 ---------------------------------------------------------------------
 
-Edit zone files under:
+Run:
+
+    make deploy
+
+This rebuilds the VM with TSIG configuration applied.
+
+---------------------------------------------------------------------
+9. Configure DNS Zones
+---------------------------------------------------------------------
+
+Edit zone files:
 
     dns/zones/
 
@@ -300,22 +242,24 @@ Validate:
 
     make validate-zones
 
----------------------------------------------------------------------
-8. CI/CD Validation
----------------------------------------------------------------------
+Commit and push.
 
-Push changes.
+---------------------------------------------------------------------
+10. CI/CD Validation
+---------------------------------------------------------------------
 
 Gitea validates:
 - Syntax
 - Serial increments
 - Drift
 - SOA correctness
+- Secrets
+- Git hooks
 
-If CI/CD fails, fix the zone files.
+Fix any failures.
 
 ---------------------------------------------------------------------
-9. Deploy Technitium
+11. Deploy Technitium (Zero Downtime)
 ---------------------------------------------------------------------
 
 Run:
@@ -335,71 +279,22 @@ Terraform will:
 Zero downtime.
 
 ---------------------------------------------------------------------
-10. Validate DNS
+12. Validate DNS
 ---------------------------------------------------------------------
 
     dig @PROD_VM_IP SOA
     dig @PROD_VM_IP <hostname> A
 
 ---------------------------------------------------------------------
-11. TSIG Rotation
+13. TSIG Rotation
 ---------------------------------------------------------------------
 
 See:
 
     docs/TSIG-ROTATION.md
 
-
 ---------------------------------------------------------------------
-12. Developer Machine Setup (OS-Specific)
----------------------------------------------------------------------
-
-Linux (Ubuntu/Debian)
----------------------
-Install required tools:
-
-    sudo apt update
-    sudo apt install -y ansible git openssh-client python3 python3-pip dnsutils make jq
-    sudo snap install yq
-
-Install Terraform:
-
-    wget -O terraform.zip https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip
-    unzip terraform.zip
-    sudo mv terraform /usr/local/bin/
-    rm terraform.zip
-
-macOS
------
-Install Homebrew:
-
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-Install tools:
-
-    brew install terraform ansible git python jq yq make bind
-
-Windows (PowerShell)
---------------------
-Install Chocolatey:
-
-    Set-ExecutionPolicy Bypass -Scope Process -Force
-    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-    iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-
-Install tools:
-
-    choco install terraform ansible git python jq make
-
-Install dig:
-
-    choco install bind-toolsonly
-
-
-
-
----------------------------------------------------------------------
-13. Summary
+14. Summary
 ---------------------------------------------------------------------
 
 You must manually configure:
@@ -407,7 +302,7 @@ You must manually configure:
 - Terraform variables
 - SSH keys
 - IP addresses
-- Unbound/BIND resolver IP
+- Unbound resolver IP
 - TSIG Secret IDs
 
 Everything else is automated:
@@ -417,23 +312,21 @@ Everything else is automated:
 - Ansible
 - Zero-downtime rebuilds
 
-This INSTALL.md is now ready for public consumption.
-
 ---------------------------------------------------------------------
 Appendix: Manual-Edit Variable Table
 ---------------------------------------------------------------------
 
-| Variable | Description | Example Placeholder |
-|---------|-------------|---------------------|
-| `pm_api_url` | Proxmox API endpoint | `https://proxmox.example.com:8006/api2/json` |
-| `pm_user` | Proxmox username | `root@pam` |
-| `pm_password` | Proxmox password | `CHANGEME` |
-| `pm_node` | Proxmox node name | `pve01` |
-| `cloudinit_template` | VMID of cloud-init template | `9000` |
-| `ssh_pubkey` | Path to SSH public key | `~/.ssh/id_ed25519.pub` |
-| `ssh_privkey` | Path to SSH private key | `~/.ssh/id_ed25519` |
-| `old_vm_id` | Current production Technitium VMID | `4000` |
-| `TEMP_VM_IP` | Temporary VM IP | `X.X.X.X` |
-| `PROD_VM_IP` | Production VM IP | `Y.Y.Y.Y` |
-| `GATEWAY_IP` | Gateway IP | `Z.Z.Z.Z` |
-| `UNBOUND_IP` | External DNS -OR- Internal recursive resolver IP address (Unbound, BIND, etc.) | `A.A.A.A` |
+| Variable | Description | Example |
+|---------|-------------|---------|
+| pm_api_url | Proxmox API endpoint | https://proxmox.example.com:8006/api2/json |
+| pm_user | Proxmox username | root@pam |
+| pm_password | Proxmox password | CHANGEME |
+| pm_node | Proxmox node name | pve01 |
+| cloudinit_template | VMID of cloud-init template | 9000 |
+| ssh_pubkey | SSH public key | ~/.ssh/id_ed25519.pub |
+| ssh_privkey | SSH private key | ~/.ssh/id_ed25519 |
+| old_vm_id | Current production VMID | 4000 |
+| TEMP_VM_IP | Temporary VM IP | X.X.X.X |
+| PROD_VM_IP | Production VM IP | Y.Y.Y.Y |
+| GATEWAY_IP | Gateway IP | Z.Z.Z.Z |
+| UNBOUND_IP | Recursive resolver IP | A.A.A.A |

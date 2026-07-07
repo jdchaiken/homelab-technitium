@@ -10,7 +10,7 @@ fqdn: technitium.example.com
 
 # --- SSH Access ---
 ssh_authorized_keys:
-  - "SSH PUBLIC KEY(S)"
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAJRRCwwPwP8t7LeT1ywCBMzn/y+aebmzKqCEtowOYrj admin@example.com"
 
 # --- Packages required before Ansible ---
 packages:
@@ -59,7 +59,7 @@ runcmd:
   - bw login --apikey
   - bw unlock "$BW_PASSWORD" --raw > /root/bw_session
 
-  - git clone https://gitea.example.com/example-org/infra.git /opt/infra
+  - git clone https://gitea.example.com/example-org/technitium.git /opt/infra
 
   - ansible-playbook /opt/infra/technitium/install-technitium.yaml
   - ansible-playbook /opt/infra/technitium/configure-technitium.yaml
