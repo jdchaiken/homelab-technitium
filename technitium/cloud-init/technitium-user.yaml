@@ -6,13 +6,6 @@ fqdn: technitium.example.com
 ssh_authorized_keys:
   - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAJRRCwwPwP8t7LeT1ywCBMzn/y+aebmzKqCEtowOYrj admin@example.com"
 
-# --- Root password for console + SSH password login ---
-chpasswd:
-  list: |
-    root:Salient2024!
-  expire: False
-ssh_pwauth: True
-
 # --- Packages required before Ansible ---
 packages:
   - qemu-guest-agent
