@@ -80,6 +80,7 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
   initialization {
     datastore_id = var.datastore
 
+    # Cloud-init snippet on Tank storage
     user_data_file_id = "tank:snippets/technitium-user.yaml"
 
     user_account {
@@ -94,10 +95,26 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
       }
     }
   }
+
+  #############################################################################
+  # Wait for cloud-init + Ansible to finish
+  #############################################################################
+  provisioner "remote-exec" {
+    inline = [
+      "cloud-init status --wait"
+    ]
+
+    connection {
+      type        = "ssh"
+      user        = "root"
+      host        = trimspace(element(split("/", var.temp_vm_ip), 0))
+      private_key = file("~/.ssh/id_ed25519")
+    }
+  }
 }
 
 ###############################################################################
-# Wait for DNS Readiness
+# Wait for DNS Readiness (Technitium authoritative check)
 ###############################################################################
 
 resource "null_resource" "wait_for_dns" {
@@ -106,11 +123,15 @@ resource "null_resource" "wait_for_dns" {
   provisioner "local-exec" {
     command = <<-EOT
       set -e
+
       VM_IP="$(echo "${var.temp_vm_ip}" | cut -d'/' -f1)"
+      HOSTNAME="technitium.example.com"
 
       echo "Waiting for DNS on $$VM_IP..."
-      for i in $(seq 1 60); do
-        if dig +short @$$VM_IP technitium.example.com SOA >/dev/null 2>&1; then
+
+      # 30 minutes total (360 × 5s)
+      for i in $(seq 1 360); do
+        if dig +short @$$VM_IP $$HOSTNAME SOA >/dev/null 2>&1; then
           echo "DNS is ready on $$VM_IP"
           exit 0
         fi
