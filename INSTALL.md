@@ -104,7 +104,7 @@ Copy the file:
 
 -or-
 
-Copy with clush: ```clush -l root -g pve -c ./technitium-user.yaml --dest /var/lib/vz/snippets```
+Copy with clush: ```clush -l root -g pve -c ./technitium-user.yaml --dest /mnt/pve/tank/snippets/```
 
 Ensure "Snippets" is enabled:
 Datacenter → Storage → local → Content → check "Snippets".

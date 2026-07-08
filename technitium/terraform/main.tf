@@ -8,7 +8,7 @@ terraform {
   required_providers {
     proxmox = {
       source  = "bpg/proxmox"
-      version = ">= 0.100"
+      version = ">= 0.111"
     }
     external = {
       source  = "hashicorp/external"
@@ -80,9 +80,11 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
   initialization {
     datastore_id = var.datastore
 
+    user_data_file_id = "tank:snippets/technitium-user.yaml"
+
     user_account {
       username = "root"
-      password = var.vm_password
+      keys     = [trimspace(file("~/.ssh/id_ed25519.pub"))]
     }
 
     ip_config {

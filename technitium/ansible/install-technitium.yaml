@@ -4,8 +4,10 @@
   become: true
 
   vars:
-    technitium_version: "11.0"
-    technitium_url: "https://download.technitium.com/dns/DnsServer_{{ technitium_version }}_amd64.deb"
+    technitium_version: "10.0.0"
+    technitium_arch: "linux_x64"
+    technitium_install_dir: "/opt/technitium"
+    technitium_url: "https://github.com/TechnitiumSoftware/DnsServer/releases/download/v{{ technitium_version }}/DnsServer_v{{ technitium_version }}_{{ technitium_arch }}.tar.gz"
 
   tasks:
     - name: Ensure required packages are installed
@@ -15,20 +17,29 @@
           - wget
           - ca-certificates
           - systemd
-          - unzip
+          - tar
         state: present
         update_cache: true
 
-    - name: Download Technitium DNS Server .deb package
+    - name: Ensure Technitium install directory exists
+      file:
+        path: "{{ technitium_install_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Download Technitium DNS Server tarball
       get_url:
         url: "{{ technitium_url }}"
-        dest: "/tmp/technitium.deb"
+        dest: "{{ technitium_install_dir }}/DnsServer.tar.gz"
         mode: "0644"
 
-    - name: Install Technitium DNS Server
-      apt:
-        deb: "/tmp/technitium.deb"
-        state: present
+    - name: Extract Technitium DNS Server
+      unarchive:
+        src: "{{ technitium_install_dir }}/DnsServer.tar.gz"
+        dest: "{{ technitium_install_dir }}"
+        remote_src: true
 
     - name: Ensure Technitium directories exist
       file:
@@ -42,6 +53,30 @@
         - /var/lib/dns
         - /var/log/dns
 
+    - name: Create systemd unit for Technitium DNS Server
+      copy:
+        dest: /etc/systemd/system/dns.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Technitium DNS Server
+          After=network.target
+
+          [Service]
+          WorkingDirectory={{ technitium_install_dir }}
+          ExecStart={{ technitium_install_dir }}/DnsServer
+          Restart=always
+          RestartSec=5
+          User=root
+          Group=root
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: true
+
     - name: Enable Technitium DNS Server service
       systemd:
         name: dns.service
@@ -52,9 +87,9 @@
         name: dns.service
         state: started
 
-    - name: Clean up installer
+    - name: Clean up installer tarball
       file:
-        path: "/tmp/technitium.deb"
+        path: "{{ technitium_install_dir }}/DnsServer.tar.gz"
         state: absent
 
     - name: Confirm installation

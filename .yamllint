@@ -7,7 +7,7 @@ rules:
 
   # Allow long lines up to 160 chars (Ansible often uses long commands)
   line-length:
-    max: 160
+    max: 180
     level: warning
 
   # Cloud-init does not require '---'

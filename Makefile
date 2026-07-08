@@ -27,7 +27,7 @@ help: ## Show this help menu
 # Ansible Operations
 ###############################################################################
 install: ## Run Technitium install playbook
-		$(ANSIBLE) install-technitium.yaml
+		$(ANSIBLE) technitium/ansible/install-technitium.yaml
 
 configure: ## Run Technitium configure playbook
 		$(ANSIBLE) configure-technitium.yaml
@@ -54,12 +54,46 @@ pull: ## Pull latest infra repo changes
 		cd $(REPO_DIR) && git pull --rebase
 
 ###############################################################################
-# Terraform Deployment
+# Terraform Deployment (Full GitOps Flow)
 ###############################################################################
-deploy: ## Deploy Technitium DNS via Terraform
-	cd technitium/terraform && terraform init && terraform apply -auto-approve -var-file=local/terraform.tfvars
+deploy: ## Deploy Technitium DNS via Terraform + Ansible + DNS readiness
+		cd technitium/terraform && terraform init && terraform apply -auto-approve -var-file=local/terraform.tfvars
 
+		@echo "$(BLUE)Waiting for VM SSH availability...$(RESET)"
+		@VM_IP=$$(grep ansible_host technitium/ansible/inventory/technitium.ini | awk -F= '{print $$2}'); \
+		for i in $$(seq 1 60); do \
+				if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 ubuntu@$$VM_IP "echo ok" >/dev/null 2>&1; then \
+						echo "$(GREEN)SSH is ready on $$VM_IP$(RESET)"; \
+						break; \
+				fi; \
+				sleep 5; \
+				if [ $$i -eq 60 ]; then \
+						echo "$(YELLOW)SSH did not become ready in time$(RESET)"; \
+						exit 1; \
+				fi; \
+		done
 
+		@echo "$(BLUE)Running Technitium install playbook...$(RESET)"
+		ansible-playbook -i technitium/ansible/inventory/technitium.ini technitium/ansible/install-technitium.yaml
+
+		@echo "$(BLUE)Running Technitium configure playbook...$(RESET)"
+		ansible-playbook -i technitium/ansible/inventory/technitium.ini technitium/ansible/configure-technitium.yaml
+
+		@echo "$(BLUE)Waiting for DNS readiness...$(RESET)"
+		@VM_IP=$$(grep ansible_host technitium/ansible/inventory/technitium.ini | awk -F= '{print $$2}'); \
+		for i in $$(seq 1 60); do \
+				if dig +short @$$VM_IP technitium.example.com SOA >/dev/null 2>&1; then \
+						echo "$(GREEN)DNS is ready on $$VM_IP$(RESET)"; \
+						break; \
+				fi; \
+				sleep 5; \
+				if [ $$i -eq 60 ]; then \
+						echo "$(YELLOW)DNS did not become ready in time$(RESET)"; \
+						exit 1; \
+				fi; \
+		done
+
+		@echo "$(GREEN)Technitium deployment complete.$(RESET)"
 
 ###############################################################################
 # Developer Environment
