@@ -85,6 +85,7 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
 
     user_account {
       username = "root"
+      password = "Salient2024!"
       keys     = [trimspace(file("~/.ssh/id_ed25519.pub"))]
     }
 

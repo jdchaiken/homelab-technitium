@@ -1,10 +1,4 @@
----
 # cloud-config
-# Place this file in Proxmox under:
-# /var/lib/vz/snippets/technitium-user.yaml
-# Install VM with:
-# - qm set <VMID> --cicustom "user=local:snippets/technitium-user.yaml" --net0 virtio,bridge=Servers
-
 hostname: technitium
 fqdn: technitium.example.com
 
@@ -12,15 +6,22 @@ fqdn: technitium.example.com
 ssh_authorized_keys:
   - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAJRRCwwPwP8t7LeT1ywCBMzn/y+aebmzKqCEtowOYrj admin@example.com"
 
+# --- Root password for console + SSH password login ---
+chpasswd:
+  list: |
+    root:Salient2024!
+  expire: False
+ssh_pwauth: True
+
 # --- Packages required before Ansible ---
 packages:
+  - qemu-guest-agent
   - python3
   - python3-pip
   - git
   - curl
   - wget
   - ca-certificates
-  - bw-cli
 
 # --- System configuration ---
 timezone: America/New_York
@@ -50,6 +51,7 @@ runcmd:
 
   - pip3 install ansible
 
+  # Install Bitwarden CLI manually (correct method)
   - curl -L "https://vault.bitwarden.com/download/?app=cli&platform=linux" -o /usr/local/bin/bw
   - chmod +x /usr/local/bin/bw
 
@@ -57,12 +59,4 @@ runcmd:
   - chmod 600 /root/bw.env
   - export $(cat /root/bw.env | xargs)
   - bw login --apikey
-  - bw unlock "$BW_PASSWORD" --raw > /root/bw_session
-
-  - git clone https://gitea.example.com/example-org/technitium.git /opt/infra
-
-  - ansible-playbook /opt/infra/technitium/install-technitium.yaml
-  - ansible-playbook /opt/infra/technitium/configure-technitium.yaml
-
-# --- Final message ---
-final_message: "Technitium DNS Server bootstrapped via cloud-init + Ansible."
+  - bw unlock "$BW_PASSWORD" --raw
