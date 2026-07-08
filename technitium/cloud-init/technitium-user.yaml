@@ -34,7 +34,7 @@ runcmd:
   - systemctl start qemu-guest-agent || true
 
   # Clone your GitOps repo
-  - git clone https://gitea.example.com/example-org/technitium.git /opt/infra || true
+  - git clone https://gitea.example.com/example-org/technitium.git /opt/infra/technitium || true
 
   # Run your Technitium Ansible playbook
   - ansible-playbook /opt/infra/technitium/technitium/ansible/install-technitium.yaml || true
