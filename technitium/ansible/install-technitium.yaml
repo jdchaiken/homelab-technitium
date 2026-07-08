@@ -3,9 +3,12 @@
   hosts: localhost
   become: true
 
+  vars:
+    technitium_installer: "https://download.technitium.com/dns/install.sh"
+
   tasks:
     ###########################################################################
-    # BASE PACKAGES REQUIRED BEFORE ANYTHING ELSE
+    # BASE PACKAGES
     ###########################################################################
     - name: Ensure required packages are installed
       apt:
@@ -17,7 +20,16 @@
         update_cache: true
 
     ###########################################################################
-    # INSTALL BITWARDEN CLI (bw)
+    # RESTORE DNS BEFORE RUNNING INSTALLER
+    ###########################################################################
+    - name: Restore working DNS resolver
+      copy:
+        dest: /etc/resolv.conf
+        content: |
+          nameserver 172.16.10.1
+
+    ###########################################################################
+    # INSTALL BITWARDEN CLI
     ###########################################################################
     - name: Download Bitwarden CLI
       get_url:
@@ -26,18 +38,31 @@
         mode: "0755"
 
     ###########################################################################
-    # INSTALL TECHNITIUM DNS SERVER
+    # RUN TECHNITIUM INSTALLER
     ###########################################################################
     - name: Download and run official Technitium installer
       shell: |
-        curl -sSL https://download.technitium.com/dns/install.sh | bash
+        curl -sSL {{ technitium_installer }} | bash
       args:
         executable: /bin/bash
 
     ###########################################################################
+    # VALIDATE SYSTEMD SERVICE
+    ###########################################################################
+    - name: Check if Technitium systemd unit exists
+      stat:
+        path: /etc/systemd/system/technitium.service
+      register: technitium_unit
+
+    - name: Fail if Technitium did not install correctly
+      fail:
+        msg: "Technitium installer failed — systemd unit not found."
+      when: not technitium_unit.stat.exists
+
+    ###########################################################################
     # ENABLE + START TECHNITIUM SERVICE
     ###########################################################################
-    - name: Ensure Technitium service is enabled and started
+    - name: Enable and start Technitium service
       systemd:
         name: technitium.service
         enabled: true
