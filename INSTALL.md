@@ -120,6 +120,13 @@ Copy next-vmid.sh to the /opt/infra/technitium folder on the PVE Host
 clush -g pve mkdir -p /opt/infra/technitium
 clush -g pve -c technitium/terraform/scripts/next-vmid.sh --dest /opt/infra/technitium
 clush -g pve chmod +x /opt/infra/technitium/*
+
+#
+pveum aclmod /nodes/pve01 -user root@pam -role Administrator
+pveum aclmod /nodes/pve02 -user root@pam -role Administrator
+pveum aclmod /nodes/pve03 -user root@pam -role Administrator
+pveum aclmod /nodes/pve04 -user root@pam -role Administrator
+
 ```
 
 This step is manual only once.

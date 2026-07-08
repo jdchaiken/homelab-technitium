@@ -1,47 +1,84 @@
+###############################################################################
+# Proxmox API
+###############################################################################
 variable "pm_api_url" {
-  description = "Proxmox API URL"
+  type        = string
+  description = "Proxmox API endpoint"
 }
 
 variable "pm_user" {
+  type        = string
   description = "Proxmox username"
 }
 
 variable "pm_password" {
-  description = "Proxmox password"
+  type        = string
   sensitive   = true
+  description = "Proxmox password"
 }
 
+###############################################################################
+# Node & Storage
+###############################################################################
 variable "pm_node" {
-  description = "Proxmox node name"
+  type        = string
+  description = "Node used for VMID allocation script"
 }
 
-variable "cloudinit_template" {
-  description = "Cloud-init template VMID"
+variable "target_node" {
+  type        = string
+  description = "Node where the temporary VM will be created"
 }
 
-variable "ssh_pubkey" {
-  description = "Path to SSH public key"
+variable "datastore" {
+  type        = string
+  description = "Proxmox datastore"
 }
 
-variable "ssh_privkey" {
-  description = "Path to SSH private key"
+###############################################################################
+# Cloud-init Image
+###############################################################################
+variable "cloud_init_image_id" {
+  type        = string
+  description = "Storage path of cloud-init image"
 }
 
-variable "old_vm_id" {
-  description = "VMID of the current production Technitium VM"
-}
+###############################################################################
+# Networking
+###############################################################################
 variable "temp_vm_ip" {
-  description = "Temporary VM IP address"
+  type        = string
+  description = "Temporary VM IP in CIDR format"
 }
 
 variable "prod_vm_ip" {
-  description = "Production VM IP address"
+  type        = string
+  description = "Production VM IP in CIDR format"
 }
 
 variable "gateway_ip" {
-  description = "Gateway IP address"
+  type        = string
+  description = "Default gateway"
 }
 
-variable "unbound_ip" {
-  description = "Unbound/BIND recursive resolver IP"
+###############################################################################
+# VM Credentials
+###############################################################################
+variable "vm_password" {
+  type        = string
+  sensitive   = true
+  description = "Root password for cloud-init"
+}
+
+variable "ssh_pubkey" {
+  type        = string
+  description = "SSH public key"
+}
+
+###############################################################################
+# Old VM Cleanup
+###############################################################################
+variable "old_vm_id" {
+  type        = number
+  description = "VMID of old Technitium VM"
 }

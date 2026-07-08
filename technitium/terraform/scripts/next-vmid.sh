@@ -1,17 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Scan Proxmox for next free VMID in the GitOps range 4000–4999
-next=$(pvesh get /cluster/resources --type vm \
-    | jq -r '.[].vmid' \
-    | awk '$1>=4000 && $1<=4999' \
-    | sort -n \
-    | awk 'END {print $1+1}')
+VMIDS=$(pvesh get /cluster/resources --type vm 2>/dev/null | jq -r '.[].vmid' 2>/dev/null || true)
 
-# Wrap around if needed
-if [[ -z "$next" || "$next" -gt 4999 ]]; then
-  next=4000
+if [ -z "$VMIDS" ]; then
+  NEXT_VMID=4000
+else
+  MAX_VMID=$(echo "$VMIDS" | sort -n | tail -1)
+  NEXT_VMID=$((MAX_VMID + 1))
 fi
 
-# Terraform external data source requires JSON output
-echo "{\"vmid\": \"$next\"}"
+printf '{"vmid":"%s"}\n' "$NEXT_VMID"

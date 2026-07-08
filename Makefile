@@ -57,7 +57,8 @@ pull: ## Pull latest infra repo changes
 # Terraform Deployment
 ###############################################################################
 deploy: ## Deploy Technitium DNS via Terraform
-		cd technitium/terraform && terraform init && terraform apply -auto-approve -var-file=local/terraform.tfvars
+	cd technitium/terraform && terraform init && terraform apply -auto-approve -var-file=local/terraform.tfvars
+
 
 
 ###############################################################################
@@ -129,6 +130,10 @@ lint: ## Run all linters (shell, YAML, Terraform)
 		@cd technitium/terraform && terraform fmt -check -no-color && terraform validate -no-color
 
 		@echo "$(GREEN)Lint complete.$(RESET)"
+
+
+bootstrap:
+		ansible-playbook -i ansible/inventory/technitium.ini ansible/technitium-bootstrap.yaml
 
 ###############################################################################
 # Phony Targets

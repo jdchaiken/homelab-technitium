@@ -1,51 +1,31 @@
-###############################################################################
-# Providers for Technitium GitOps Terraform Module
-###############################################################################
 
-terraform {
-  required_version = ">= 1.5.0"
-
-  required_providers {
-    proxmox = {
-      source  = "telmate/proxmox"
-      version = "2.9.14"
-    }
-
-    null = {
-      source  = "hashicorp/null"
-      version = "3.3.0"
-    }
-
-    external = {
-      source  = "hashicorp/external"
-      version = "2.3.1"
-    }
-  }
-}
 
 ###############################################################################
-# Provider Configuration
+# Proxmox Provider Authentication Modes
+#
+# PASSWORD AUTH (default)
+#   provider "proxmox" {
+#     endpoint = var.pm_api_url
+#     username = var.pm_user
+#     password = var.pm_password
+#     insecure = true
+#   }
+#
+# TOKEN AUTH (recommended for production)
+#   provider "proxmox" {
+#     endpoint = var.pm_api_url
+#     username = var.pm_user
+#     api_token {
+#       id     = var.pm_token_id
+#       secret = var.pm_token_secret
+#     }
+#     insecure = true
+#   }
+#
+# Notes:
+#   - Token auth bypasses 2FA and is safer for automation.
+#   - Token must have VM.* privileges on the target node.
+#   - Password auth is simpler but less secure.
 ###############################################################################
 
-## Password Authentication
-provider "proxmox" {
-  pm_api_url        = var.pm_api_url
-  pm_user           = var.pm_user
-  pm_password       = var.pm_password
-  pm_api_token_id   = ""              # forces password mode
-  pm_tls_insecure   = true
-}
 
-## Token Authentication
-# provider "proxmox" {
-#   pm_api_url  = var.pm_api_url
-#   pm_user     = "root@pam!terraform"
-#   pm_api_token_id = "terraform"
-#   pm_api_token_secret = var.pm_password
-#   pm_tls_insecure = true
-# }
-
-
-provider "null" {}
-
-provider "external" {}

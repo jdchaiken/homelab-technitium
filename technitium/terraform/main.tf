@@ -1,24 +1,40 @@
 ###############################################################################
-# Technitium DNS — GitOps Rebuild Pipeline (Terraform)
-#
-# This module:
-#   1. Allocates a new VMID using an external script (no temp files)
-#   2. Creates a temporary Technitium VM at 172.16.100.7
-#   3. Waits for DNS service readiness
-#   4. Cuts over the production IP (172.16.100.6)
-#   5. Destroys the old VM
-#
-# This design ensures zero‑downtime rebuilds and full declarative GitOps flow.
+# Terraform + Providers
 ###############################################################################
 
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    proxmox = {
+      source  = "bpg/proxmox"
+      version = ">= 0.100"
+    }
+    external = {
+      source  = "hashicorp/external"
+      version = "2.3.1"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "3.3.0"
+    }
+  }
+}
+
+provider "proxmox" {
+  endpoint = var.pm_api_url
+  username = var.pm_user
+  password = var.pm_password
+  insecure = true
+}
+
+provider "external" {}
+provider "null" {}
+
 ###############################################################################
-# VMID Allocation (GitOps‑safe)
-#
-# The external script returns JSON:
-#   { "vmid": "4001" }
-#
-# Terraform reads this via data.external and converts it to a number.
+# VMID Allocation (GitOps-safe)
 ###############################################################################
+
 data "external" "vmid" {
   program = ["ssh", "root@${var.pm_node}", "/opt/infra/technitium/next-vmid.sh"]
 }
@@ -28,97 +44,121 @@ locals {
 }
 
 ###############################################################################
-# Temporary Technitium VM
-#
-# This VM boots with cloud‑init, installs Technitium, loads zones, and
-# becomes a fully functional DNS server at 172.16.100.7.
-#
-# After validation, we cut it over to the production IP.
+# Temporary Technitium VM (Cloud-init)
 ###############################################################################
-resource "proxmox_vm_qemu" "technitium_temp" {
-  vmid        = local.new_vmid
-  name        = "technitium-temp-${local.new_vmid}"
-  target_node = var.pm_node
-  clone       = var.cloudinit_template
 
-  cores   = 2
-  memory  = 2048
-  sockets = 1
+resource "proxmox_virtual_environment_vm" "technitium_temp" {
+  name      = "technitium-temp"
+  node_name = var.target_node
+  vm_id     = local.new_vmid
 
-  # Temporary IP for staging
-  ipconfig0 = "ip=172.16.100.7/24,gw=172.16.100.1"
+  cpu {
+    cores = 2
+  }
 
-  # Cloud-init user-data
-  cicustom = "user=local:snippets/technitium-user.yaml"
+  memory {
+    dedicated = 4096
+  }
 
-  # Inject SSH key for remote-exec readiness checks
-  sshkeys = file(var.ssh_pubkey)
+  agent {
+    enabled = true
+  }
 
-  onboot = true
-}
+  disk {
+    datastore_id = var.datastore
+    interface    = "scsi0"
+    size         = 8
+    file_id      = var.cloud_init_image_id
+    file_format  = "qcow2"
+  }
 
-###############################################################################
-# Wait for DNS readiness
-#
-# We SSH into the temp VM and poll until Technitium responds to SOA queries.
-###############################################################################
-resource "null_resource" "wait_for_dns" {
-  depends_on = [proxmox_vm_qemu.technitium_temp]
+  network_device {
+    bridge = "Servers"
+    model  = "virtio"
+  }
 
-  provisioner "remote-exec" {
-    inline = [
-      "until dig @172.16.100.7 SOA +short; do sleep 5; done",
-      "echo DNS is responding"
-    ]
+  initialization {
+    datastore_id = var.datastore
 
-    connection {
-      type        = "ssh"
-      host        = "172.16.100.7"
-      user        = "jdc"
-      private_key = file(var.ssh_privkey)
+    user_account {
+      username = "root"
+      password = var.vm_password
+    }
+
+    ip_config {
+      ipv4 {
+        address = var.temp_vm_ip
+        gateway = var.gateway_ip
+      }
     }
   }
 }
 
 ###############################################################################
-# Cutover
-#
-# 1. Stop the old VM
-# 2. Move the new VM to the production IP (172.16.100.6)
-# 3. Reboot the new VM
+# Wait for DNS Readiness
 ###############################################################################
+
+resource "null_resource" "wait_for_dns" {
+  depends_on = [proxmox_virtual_environment_vm.technitium_temp]
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      VM_IP="$(echo "${var.temp_vm_ip}" | cut -d'/' -f1)"
+
+      echo "Waiting for DNS on $$VM_IP..."
+      for i in $(seq 1 60); do
+        if dig +short @$$VM_IP technitium.example.com SOA >/dev/null 2>&1; then
+          echo "DNS is ready on $$VM_IP"
+          exit 0
+        fi
+        sleep 5
+      done
+
+      echo "DNS did not become ready in time"
+      exit 1
+    EOT
+  }
+}
+
+###############################################################################
+# Cutover: Move New VM to Production IP
+###############################################################################
+
 resource "null_resource" "cutover" {
   depends_on = [null_resource.wait_for_dns]
 
   provisioner "local-exec" {
-    command = <<EOF
-qm stop ${var.old_vm_id}
-qm set ${local.new_vmid} --ipconfig0 ip=172.16.100.6/24,gw=172.16.100.1
-qm reboot ${local.new_vmid}
-EOF
+    command = <<-EOT
+      set -e
+
+      echo "Stopping old VM ${var.old_vm_id}..."
+      qm stop ${var.old_vm_id}
+
+      PROD_IP="$(echo "${var.prod_vm_ip}" | cut -d'/' -f1)"
+      CIDR="$(echo "${var.prod_vm_ip}" | cut -d'/' -f2)"
+
+      echo "Setting new VM ${local.new_vmid} to production IP $$PROD_IP/$$CIDR..."
+      qm set ${local.new_vmid} --ipconfig0 ip=$$PROD_IP/$$CIDR,gw=${var.gateway_ip}
+
+      echo "Rebooting new VM ${local.new_vmid}..."
+      qm reboot ${local.new_vmid}
+    EOT
   }
 }
 
 ###############################################################################
-# Destroy Old VM
-#
-# After cutover, the old VM is removed to maintain GitOps cleanliness.
+# Destroy Old VM After Successful Cutover
 ###############################################################################
+
 resource "null_resource" "destroy_old" {
   depends_on = [null_resource.cutover]
 
   provisioner "local-exec" {
-    command = "qm destroy ${var.old_vm_id}"
+    command = <<-EOT
+      set -e
+      echo "Destroying old VM ${var.old_vm_id}..."
+      qm destroy ${var.old_vm_id}
+    EOT
   }
-}
-
-###############################################################################
-# Outputs
-###############################################################################
-output "new_vmid" {
-  value = local.new_vmid
-}
-
-output "temp_vm_name" {
-  value = proxmox_vm_qemu.technitium_temp.name
 }

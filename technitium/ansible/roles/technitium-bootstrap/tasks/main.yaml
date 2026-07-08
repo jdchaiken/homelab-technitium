@@ -1,0 +1,12 @@
+---
+- name: Ensure root SSH directory exists
+  file:
+    path: /root/.ssh
+    state: directory
+    mode: "0700"
+
+- name: Install authorized key
+  copy:
+    dest: /root/.ssh/authorized_keys
+    content: "{{ ssh_pubkey }}"
+    mode: "0600"
