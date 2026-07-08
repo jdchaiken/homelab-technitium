@@ -7,14 +7,6 @@
     technitium_api: "http://localhost:5380/api"
     zone_path: "/opt/infra/technitium/zones"
 
-    # Bitwarden Secrets Manager API
-    bw_api_url: "https://api.bitwarden.com/secrets"
-
-    # You will paste your real secret UUIDs here
-    tsig_name_secret_id: "TSIG_NAME_SECRET_ID_HERE"
-    tsig_algorithm_secret_id: "TSIG_ALGORITHM_SECRET_ID_HERE"
-    tsig_secret_secret_id: "TSIG_SECRET_SECRET_ID_HERE"
-
   tasks:
     - name: Wait for Technitium API to become available
       uri:
@@ -22,48 +14,72 @@
         method: GET
         status_code: 200
       register: api_status
-      retries: 10
+      retries: 20
       delay: 3
       until: api_status.status == 200
 
-    - name: Load Bitwarden env into Ansible
+    ###########################################################################
+    # BITWARDEN LOGIN + UNLOCK
+    ###########################################################################
+
+    - name: Load Bitwarden environment file
+      shell: |
+        export $(cat /etc/pve/technitium/bw.env | xargs)
+        bw login --apikey
+        bw unlock "$BW_PASSWORD" --raw > /root/bw_session
+      args:
+        executable: /bin/bash
+
+    ###########################################################################
+    # AUTO-GENERATE TSIG KEY IN TECHNITIUM
+    ###########################################################################
+
+    - name: Generate TSIG key in Technitium
+      uri:
+        url: "{{ technitium_api }}/tsig/add"
+        method: POST
+        body_format: json
+        body:
+          Name: "externaldns"
+          Algorithm: "hmac-sha256"
+          Secret: ""
+        status_code: 200
+      register: tsig_create
+
+    - name: Extract TSIG values
       set_fact:
-        bw_token: "{{ lookup('env', 'BW_TOKEN') }}"
-        bw_orgid: "{{ lookup('env', 'BW_ORGID') }}"
-        bw_projectid: "{{ lookup('env', 'BW_PROJECTID') }}"
+        tsig_name: "{{ tsig_create.json.Name }}"
+        tsig_algorithm: "{{ tsig_create.json.Algorithm }}"
+        tsig_secret: "{{ tsig_create.json.Secret }}"
 
-    - name: Fetch TSIG name from Bitwarden Secrets Manager
-      uri:
-        url: "{{ bw_api_url }}/{{ tsig_name_secret_id }}"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ bw_token }}"
-        return_content: true
-      register: tsig_name_resp
+    ###########################################################################
+    # STORE TSIG IN BITWARDEN SECRETS MANAGER
+    ###########################################################################
 
-    - name: Fetch TSIG algorithm from Bitwarden Secrets Manager
-      uri:
-        url: "{{ bw_api_url }}/{{ tsig_algorithm_secret_id }}"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ bw_token }}"
-        return_content: true
-      register: tsig_algorithm_resp
+    - name: Store TSIG name in Bitwarden
+      shell: |
+        export BW_SESSION=$(cat /root/bw_session)
+        bw secret create --key tsig-name --value "{{ tsig_name }}" --projectid "$BW_PROJECTID"
+      args:
+        executable: /bin/bash
 
-    - name: Fetch TSIG secret from Bitwarden Secrets Manager
-      uri:
-        url: "{{ bw_api_url }}/{{ tsig_secret_secret_id }}"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ bw_token }}"
-        return_content: true
-      register: tsig_secret_resp
+    - name: Store TSIG algorithm in Bitwarden
+      shell: |
+        export BW_SESSION=$(cat /root/bw_session)
+        bw secret create --key tsig-algorithm --value "{{ tsig_algorithm }}" --projectid "$BW_PROJECTID"
+      args:
+        executable: /bin/bash
 
-    - name: Set TSIG facts
-      set_fact:
-        tsig_name: "{{ tsig_name_resp.json.data.value }}"
-        tsig_algorithm: "{{ tsig_algorithm_resp.json.data.value }}"
-        tsig_secret: "{{ tsig_secret_resp.json.data.value }}"
+    - name: Store TSIG secret in Bitwarden
+      shell: |
+        export BW_SESSION=$(cat /root/bw_session)
+        bw secret create --key tsig-secret --value "{{ tsig_secret }}" --projectid "$BW_PROJECTID"
+      args:
+        executable: /bin/bash
+
+    ###########################################################################
+    # CONFIGURE TECHNITIUM SETTINGS
+    ###########################################################################
 
     - name: Configure upstream resolver (Unbound)
       uri:
@@ -103,18 +119,11 @@
           EnableApiLogging: true
         status_code: 200
 
-    - name: Configure TSIG key for RFC2136
-      uri:
-        url: "{{ technitium_api }}/tsig/add"
-        method: POST
-        body_format: json
-        body:
-          Name: "{{ tsig_name }}"
-          Algorithm: "{{ tsig_algorithm }}"
-          Secret: "{{ tsig_secret }}"
-        status_code: 200
+    ###########################################################################
+    # IMPORT ZONES
+    ###########################################################################
 
-    - name: Load zone files
+    - name: Import zones
       loop:
         - example.com.zone
         - example.net.zone
@@ -128,11 +137,15 @@
           name: "{{ item | regex_replace('\\.zone$', '') }}"
         status_code: 200
 
+    ###########################################################################
+    # RESTART SERVICE
+    ###########################################################################
+
     - name: Restart Technitium DNS service
       systemd:
-        name: dns.service
+        name: technitium.service
         state: restarted
 
     - name: Confirm configuration applied
       debug:
-        msg: "Technitium DNS Server fully configured via Bitwarden Secrets Manager + GitOps."
+        msg: "Technitium DNS Server fully configured with auto-generated TSIG + Bitwarden + GitOps."

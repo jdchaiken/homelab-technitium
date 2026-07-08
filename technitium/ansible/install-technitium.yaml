@@ -1,97 +1,151 @@
 ---
-- name: Install Technitium DNS Server on Debian 13
+- name: Configure Technitium DNS Server declaratively
   hosts: localhost
   become: true
 
   vars:
-    technitium_version: "10.0.0"
-    technitium_arch: "linux_x64"
-    technitium_install_dir: "/opt/technitium"
-    technitium_url: "https://github.com/TechnitiumSoftware/DnsServer/releases/download/v{{ technitium_version }}/DnsServer_v{{ technitium_version }}_{{ technitium_arch }}.tar.gz"
+    technitium_api: "http://localhost:5380/api"
+    zone_path: "/opt/infra/technitium/zones"
 
   tasks:
-    - name: Ensure required packages are installed
-      apt:
-        name:
-          - curl
-          - wget
-          - ca-certificates
-          - systemd
-          - tar
-        state: present
-        update_cache: true
+    - name: Wait for Technitium API to become available
+      uri:
+        url: "{{ technitium_api }}/status"
+        method: GET
+        status_code: 200
+      register: api_status
+      retries: 20
+      delay: 3
+      until: api_status.status == 200
 
-    - name: Ensure Technitium install directory exists
-      file:
-        path: "{{ technitium_install_dir }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
+    ###########################################################################
+    # BITWARDEN LOGIN + UNLOCK
+    ###########################################################################
 
-    - name: Download Technitium DNS Server tarball
-      get_url:
-        url: "{{ technitium_url }}"
-        dest: "{{ technitium_install_dir }}/DnsServer.tar.gz"
-        mode: "0644"
+    - name: Load Bitwarden environment file
+      shell: |
+        export $(cat /etc/pve/technitium/bw.env | xargs)
+        bw login --apikey
+        bw unlock "$BW_PASSWORD" --raw > /root/bw_session
+      args:
+        executable: /bin/bash
 
-    - name: Extract Technitium DNS Server
-      unarchive:
-        src: "{{ technitium_install_dir }}/DnsServer.tar.gz"
-        dest: "{{ technitium_install_dir }}"
-        remote_src: true
+    ###########################################################################
+    # AUTO-GENERATE TSIG KEY IN TECHNITIUM
+    ###########################################################################
 
-    - name: Ensure Technitium directories exist
-      file:
-        path: "{{ item }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
+    - name: Generate TSIG key in Technitium
+      uri:
+        url: "{{ technitium_api }}/tsig/add"
+        method: POST
+        body_format: json
+        body:
+          Name: "externaldns"
+          Algorithm: "hmac-sha256"
+          Secret: ""
+        status_code: 200
+      register: tsig_create
+
+    - name: Extract TSIG values
+      set_fact:
+        tsig_name: "{{ tsig_create.json.Name }}"
+        tsig_algorithm: "{{ tsig_create.json.Algorithm }}"
+        tsig_secret: "{{ tsig_create.json.Secret }}"
+
+    ###########################################################################
+    # STORE TSIG IN BITWARDEN SECRETS MANAGER
+    ###########################################################################
+
+    - name: Store TSIG name in Bitwarden
+      shell: |
+        export BW_SESSION=$(cat /root/bw_session)
+        bw secret create --key tsig-name --value "{{ tsig_name }}" --projectid "$BW_PROJECTID"
+      args:
+        executable: /bin/bash
+
+    - name: Store TSIG algorithm in Bitwarden
+      shell: |
+        export BW_SESSION=$(cat /root/bw_session)
+        bw secret create --key tsig-algorithm --value "{{ tsig_algorithm }}" --projectid "$BW_PROJECTID"
+      args:
+        executable: /bin/bash
+
+    - name: Store TSIG secret in Bitwarden
+      shell: |
+        export BW_SESSION=$(cat /root/bw_session)
+        bw secret create --key tsig-secret --value "{{ tsig_secret }}" --projectid "$BW_PROJECTID"
+      args:
+        executable: /bin/bash
+
+    ###########################################################################
+    # CONFIGURE TECHNITIUM SETTINGS
+    ###########################################################################
+
+    - name: Configure upstream resolver (Unbound)
+      uri:
+        url: "{{ technitium_api }}/settings/set"
+        method: POST
+        body_format: json
+        body:
+          RecursiveDnsServers:
+            - "172.16.10.1"
+          EnableRecursion: true
+          EnableDnsSecValidation: true
+        status_code: 200
+
+    - name: Configure ACLs
+      uri:
+        url: "{{ technitium_api }}/settings/set"
+        method: POST
+        body_format: json
+        body:
+          AllowRecursionFrom:
+            - "172.16.0.0/12"
+            - "192.168.200.0/20"
+            - "192.168.0.0/17"
+          AllowZoneTransferFrom:
+            - "172.16.0.0/12"
+            - "192.168.200.0/20"
+            - "192.168.0.0/17"
+        status_code: 200
+
+    - name: Configure logging
+      uri:
+        url: "{{ technitium_api }}/settings/set"
+        method: POST
+        body_format: json
+        body:
+          EnableQueryLogging: true
+          EnableApiLogging: true
+        status_code: 200
+
+    ###########################################################################
+    # IMPORT ZONES
+    ###########################################################################
+
+    - name: Import zones
       loop:
-        - /etc/dns
-        - /var/lib/dns
-        - /var/log/dns
+        - example.com.zone
+        - example.net.zone
+        - storage.example.com.zone
+      uri:
+        url: "{{ technitium_api }}/zone/import"
+        method: POST
+        body_format: form-multipart
+        body:
+          zone: "{{ lookup('file', zone_path + '/' + item) }}"
+          name: "{{ item | regex_replace('\\.zone$', '') }}"
+        status_code: 200
 
-    - name: Create systemd unit for Technitium DNS Server
-      copy:
-        dest: /etc/systemd/system/dns.service
-        mode: "0644"
-        content: |
-          [Unit]
-          Description=Technitium DNS Server
-          After=network.target
+    ###########################################################################
+    # RESTART SERVICE
+    ###########################################################################
 
-          [Service]
-          WorkingDirectory={{ technitium_install_dir }}
-          ExecStart={{ technitium_install_dir }}/DnsServer
-          Restart=always
-          RestartSec=5
-          User=root
-          Group=root
-
-          [Install]
-          WantedBy=multi-user.target
-
-    - name: Reload systemd daemon
+    - name: Restart Technitium DNS service
       systemd:
-        daemon_reload: true
+        name: technitium.service
+        state: restarted
 
-    - name: Enable Technitium DNS Server service
-      systemd:
-        name: dns.service
-        enabled: true
-
-    - name: Start Technitium DNS Server service
-      systemd:
-        name: dns.service
-        state: started
-
-    - name: Clean up installer tarball
-      file:
-        path: "{{ technitium_install_dir }}/DnsServer.tar.gz"
-        state: absent
-
-    - name: Confirm installation
+    - name: Confirm configuration applied
       debug:
-        msg: "Technitium DNS Server {{ technitium_version }} installed and running."
+        msg: "Technitium DNS Server fully configured with auto-generated TSIG + Bitwarden + GitOps."

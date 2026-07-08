@@ -1,12 +1,16 @@
-# cloud-config
+#cloud-config
 hostname: technitium
 fqdn: technitium.example.com
 
-# --- SSH Access ---
 ssh_authorized_keys:
-  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAJRRCwwPwP8t7LeT1ywCBMzn/y+aebmzKqCEtowOYrj admin@example.com"
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAJRRCwwPwP8t7LeT1ywCBMzn/y+aebmzKqCEtowOYrj admin@example.com
 
-# --- Packages required before Ansible ---
+ssh_pwauth: true
+disable_root: false
+
+chpasswd:
+  expire: false
+
 packages:
   - qemu-guest-agent
   - python3
@@ -15,41 +19,25 @@ packages:
   - curl
   - wget
   - ca-certificates
+  - ansible
 
-# --- System configuration ---
 timezone: America/New_York
 
-# --- Networking (static IP for Technitium) ---
-network:
-  version: 2
-  ethernets:
-    ens18:
-      dhcp4: false
-      addresses:
-        - 172.16.100.6/24
-      gateway4: 172.16.100.1
-      nameservers:
-        addresses:
-          - 172.16.100.1
-
-# --- Write GitOps directory structure (optional) ---
 write_files:
   - path: /opt/infra/.gitkeep
     content: ""
 
-# --- Install Ansible + run Technitium playbook ---
 runcmd:
-  - apt-get update -y
-  - apt-get upgrade -y
+  - apt-get update -y || true
+  - apt-get upgrade -y || true
+  - systemctl enable qemu-guest-agent || true
+  - systemctl start qemu-guest-agent || true
 
-  - pip3 install ansible
+  # Clone your GitOps repo
+  - git clone https://gitea.example.com/example-org/technitium.git /opt/infra || true
 
-  # Install Bitwarden CLI manually (correct method)
-  - curl -L "https://vault.bitwarden.com/download/?app=cli&platform=linux" -o /usr/local/bin/bw
-  - chmod +x /usr/local/bin/bw
+  # Run your Technitium Ansible playbook
+  - ansible-playbook /opt/infra/technitium/technitium/ansible/install-technitium.yaml || true
+  - ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium.yaml || true
 
-  - cp /etc/pve/technitium/bw.env /root/bw.env
-  - chmod 600 /root/bw.env
-  - export $(cat /root/bw.env | xargs)
-  - bw login --apikey
-  - bw unlock "$BW_PASSWORD" --raw
+final_message: "Technitium DNS Server base image initialized via cloud-init."

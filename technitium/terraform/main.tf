@@ -52,6 +52,16 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
   node_name = var.target_node
   vm_id     = local.new_vmid
 
+  # Clone Debian cloud-init template (VMID 9000)
+  clone {
+    vm_id = 9000
+    full  = false
+  }
+
+  operating_system {
+    type = "l26"
+  }
+
   cpu {
     cores = 2
   }
@@ -64,12 +74,11 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
     enabled = true
   }
 
+  # Resize/move cloned disk to iSCSI storage "itank"
   disk {
-    datastore_id = var.datastore
+    datastore_id = "itank"
     interface    = "scsi0"
     size         = 8
-    file_id      = var.cloud_init_image_id
-    file_format  = "qcow2"
   }
 
   network_device {
@@ -78,15 +87,13 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
   }
 
   initialization {
-    datastore_id = var.datastore
+    datastore_id = "tank"
 
-    # Cloud-init snippet on Tank storage
     user_data_file_id = "tank:snippets/technitium-user.yaml"
 
     user_account {
       username = "root"
-      password = "Salient2024!"
-      keys     = [trimspace(file("~/.ssh/id_ed25519.pub"))]
+      password = var.vm_password
     }
 
     ip_config {
@@ -97,9 +104,6 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
     }
   }
 
-  #############################################################################
-  # Wait for cloud-init + Ansible to finish
-  #############################################################################
   provisioner "remote-exec" {
     inline = [
       "cloud-init status --wait"
@@ -130,7 +134,6 @@ resource "null_resource" "wait_for_dns" {
 
       echo "Waiting for DNS on $$VM_IP..."
 
-      # 30 minutes total (360 × 5s)
       for i in $(seq 1 360); do
         if dig +short @$$VM_IP $$HOSTNAME SOA >/dev/null 2>&1; then
           echo "DNS is ready on $$VM_IP"

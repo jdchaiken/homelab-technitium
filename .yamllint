@@ -16,7 +16,7 @@ rules:
 
   # Comments without a space are fine
   comments:
-    # min-spaces: 0
+    require-starting-space: false
     level: warning
 
   # Don't require indentation for sequences
