@@ -33,9 +33,9 @@
     ###########################################################################
     # CONFIGURE BWS CLI WITH ACCESS TOKEN
     ###########################################################################
-    - name: Configure BWS CLI with access token
+    - name: Export Bitwarden Secrets Manager access token
       shell: |
-        bws configure set access_token "$BW_TOKEN"
+        export BWS_ACCESS_TOKEN="$BW_TOKEN"
       args:
         executable: /bin/bash
 
