@@ -28,12 +28,13 @@ timezone: America/New_York
 write_files:
   - path: /opt/infra/.gitkeep
     content: ""
-  - path: /root/bw.env
+
+  ###########################################################################
+  # Technitium default admin password (required for API bootstrap)
+  ###########################################################################
+  - path: /etc/technitium/default-admin-password
     content: |
-      BW_CLIENTID=...
-      BW_CLIENTSECRET=...
-      BW_PASSWORD=...
-      BW_PROJECTID=...
+      admin
     permissions: "0600"
 
 runcmd:
@@ -42,10 +43,28 @@ runcmd:
   - systemctl enable qemu-guest-agent || true
   - systemctl start qemu-guest-agent || true
 
+  ###########################################################################
+  # Copy Bitwarden env file from Proxmox host into VM
+  ###########################################################################
+  - /usr/bin/qemu-ga --fsfreeze-freeze || true
+  - /usr/bin/qemu-ga --file-read /etc/pve/technitium/bw.env > /root/bw.env || true
+  - /usr/bin/qemu-ga --fsfreeze-thaw || true
+  - chmod 600 /root/bw.env || true
+
+  ###########################################################################
+  # Ensure Technitium DNS service is enabled and started
+  ###########################################################################
+  - systemctl enable technitium-dns.service || true
+  - systemctl start technitium-dns.service || true
+
+  ###########################################################################
   # Clone your GitOps repo
+  ###########################################################################
   - git clone https://gitea.example.com/example-org/technitium.git /opt/infra/technitium || true
 
-  # Run your Technitium Ansible playbook
+  ###########################################################################
+  # Run your Technitium Ansible playbooks
+  ###########################################################################
   - ansible-playbook /opt/infra/technitium/technitium/ansible/install-technitium.yaml || true
   - ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium.yaml || true
 

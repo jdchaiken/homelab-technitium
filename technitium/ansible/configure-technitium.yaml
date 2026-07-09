@@ -2,14 +2,17 @@
 - name: Configure Technitium DNS Server declaratively (GitOps + Bitwarden)
   hosts: localhost
   become: true
+  gather_facts: false
 
   vars:
-    technitium_api: "http://localhost:5380/api"
-    zone_path: "/opt/infra/technitium/zones"
+    technitium_url: "http://localhost:5380"
+    technitium_api: "{{ technitium_url }}/api"
+    technitium_admin_user: "admin"
+    zone_dir: "/opt/infra/technitium/dns/zones"
 
   tasks:
     ###########################################################################
-    # WAIT FOR TECHNITIUM API
+    # 1. WAIT FOR TECHNITIUM API
     ###########################################################################
     - name: Wait for Technitium API to become available
       uri:
@@ -22,125 +25,155 @@
       until: api_status.status == 200
 
     ###########################################################################
-    # LOAD BITWARDEN ENVIRONMENT
+    # 2. LOAD BITWARDEN CREDENTIALS
+    # /root/bw.env is a shell-style KEY="value" file (see secrets/bw.env.sample),
+    # not YAML, so pull fields out with regex_search instead of from_yaml.
     ###########################################################################
-    - name: Load Bitwarden Secrets Manager environment variables
-      shell: |
-        export $(cat /root/bw.env | xargs)
-      args:
-        executable: /bin/bash
-
-    ###########################################################################
-    # RETRIEVE BOOTSTRAP API TOKEN FROM BITWARDEN
-    ###########################################################################
-    - name: Retrieve Technitium bootstrap API token
-      shell: |
-        export BWS_ACCESS_TOKEN="$BW_TOKEN"
-        bws secret get "$TECHNITIUM_BOOTSTRAP_TOKEN_ID" | jq -r '.value'
-      register: bootstrap_token_raw
-      args:
-        executable: /bin/bash
-
-    - name: Set bootstrap token fact
+    - name: Read Bitwarden environment file
       set_fact:
-        technitium_api_token: "{{ bootstrap_token_raw.stdout }}"
+        bw_env_raw: "{{ lookup('file', '/root/bw.env') }}"
+      no_log: true
+
+    - name: Parse Bitwarden credentials and initial admin password
+      set_fact:
+        bw_token: "{{ bw_env_raw | regex_search('BW_TOKEN=\"?([^\"\\n]+)\"?', '\\1') }}"
+        bw_projectid: "{{ bw_env_raw | regex_search('BW_PROJECTID=\"?([^\"\\n]+)\"?', '\\1') }}"
+        technitium_admin_password: "{{ bw_env_raw | regex_search('TECHNITIUM_ADMIN_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') }}"
+      no_log: true
 
     ###########################################################################
-    # CREATE A NEW TECHNITIUM API KEY FOR ANSIBLE (AUTHENTICATED)
+    # 3. LOGIN WITH DEFAULT PASSWORD (admin/admin)
+    # Every freshly built VM ships an unconfigured Technitium instance, so the
+    # default credentials are always valid here. This playbook is not meant
+    # to be re-run against an already-configured instance.
+    ###########################################################################
+    - name: Login to Technitium with default password
+      uri:
+        url: "{{ technitium_api }}/login"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ technitium_admin_user }}"
+          password: "admin"
+        status_code: 200
+      register: login_default
+
+    - name: Extract default session token
+      set_fact:
+        technitium_session_token_default: "{{ login_default.json.token }}"
+      no_log: true
+
+    ###########################################################################
+    # 4. CHANGE ADMIN PASSWORD
+    ###########################################################################
+    - name: Change Technitium admin password
+      uri:
+        url: "{{ technitium_api }}/changepassword"
+        method: POST
+        headers:
+          X-Auth-Token: "{{ technitium_session_token_default }}"
+        body_format: json
+        body:
+          oldPassword: "admin"
+          newPassword: "{{ technitium_admin_password }}"
+        status_code: 200
+      no_log: true
+
+    ###########################################################################
+    # 5. LOGIN AGAIN WITH NEW PASSWORD
+    ###########################################################################
+    - name: Login with new password
+      uri:
+        url: "{{ technitium_api }}/login"
+        method: POST
+        body_format: json
+        body:
+          username: "{{ technitium_admin_user }}"
+          password: "{{ technitium_admin_password }}"
+        status_code: 200
+      register: login_new
+      no_log: true
+
+    - name: Extract new session token
+      set_fact:
+        technitium_session_token: "{{ login_new.json.token }}"
+      no_log: true
+
+    ###########################################################################
+    # 6. CREATE PERMANENT ANSIBLE API KEY
     ###########################################################################
     - name: Create Technitium API key for Ansible
       uri:
         url: "{{ technitium_api }}/apikey/add"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_api_token }}"
+          X-Auth-Token: "{{ technitium_session_token }}"
         body_format: json
         body:
           Name: "ansible"
         status_code: 200
       register: api_key_create
+      no_log: true
 
-    - name: Extract new Technitium API token
+    - name: Extract new Technitium API key
       set_fact:
-        technitium_api_token: "{{ api_key_create.json.ApiKey }}"
+        technitium_api_key: "{{ api_key_create.json.ApiKey }}"
+      no_log: true
 
     ###########################################################################
-    # STORE NEW TECHNITIUM API TOKEN IN BITWARDEN
+    # 7. STORE API KEY IN BITWARDEN
+    # NOTE: verify `bws secret create` arguments against the bws CLI version
+    # pinned in install-technitium.yaml (currently v2.1.0) before relying on
+    # this in production - the flag/positional syntax has changed across
+    # bws releases.
     ###########################################################################
-    - name: Store Technitium API token in Bitwarden Secrets Manager
+    - name: Store Technitium API key in Bitwarden
       shell: |
-        export BWS_ACCESS_TOKEN="$BW_TOKEN"
-        bws secret create \
-          --name "technitium-api-token" \
-          --value "{{ technitium_api_token }}" \
-          --project-id "$BW_PROJECTID"
+        export BWS_ACCESS_TOKEN="{{ bw_token }}"
+        bws secret create "technitium-ansible-api-key" "{{ technitium_api_key }}" "{{ bw_projectid }}"
       args:
         executable: /bin/bash
+      no_log: true
 
     ###########################################################################
-    # AUTO-GENERATE TSIG KEY IN TECHNITIUM
+    # 8. CREATE TSIG KEY FOR RFC2136 UPDATES
     ###########################################################################
-    - name: Generate TSIG key in Technitium
+    - name: Create TSIG key
       uri:
         url: "{{ technitium_api }}/tsig/add"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_api_token }}"
+          X-Auth-Token: "{{ technitium_api_key }}"
         body_format: json
         body:
-          Name: "externaldns"
+          Name: "externaldns-key"
           Algorithm: "hmac-sha256"
         status_code: 200
       register: tsig_create
-
-    - name: Extract TSIG values
-      set_fact:
-        tsig_name: "{{ tsig_create.json.Name }}"
-        tsig_algorithm: "{{ tsig_create.json.Algorithm }}"
-        tsig_secret: "{{ tsig_create.json.Secret }}"
+      no_log: true
 
     ###########################################################################
-    # STORE TSIG VALUES IN BITWARDEN
+    # 9. STORE TSIG VALUES IN BITWARDEN
     ###########################################################################
-    - name: Store TSIG name in Bitwarden
+    - name: Store TSIG values in Bitwarden
       shell: |
-        export BWS_ACCESS_TOKEN="$BW_TOKEN"
-        bws secret create \
-          --name "tsig-name" \
-          --value "{{ tsig_name }}" \
-          --project-id "$BW_PROJECTID"
+        export BWS_ACCESS_TOKEN="{{ bw_token }}"
+        bws secret create "externaldns-tsig-name" "{{ tsig_create.json.Name }}" "{{ bw_projectid }}"
+        bws secret create "externaldns-tsig-algorithm" "{{ tsig_create.json.Algorithm }}" "{{ bw_projectid }}"
+        bws secret create "externaldns-tsig-secret" "{{ tsig_create.json.Secret }}" "{{ bw_projectid }}"
       args:
         executable: /bin/bash
-
-    - name: Store TSIG algorithm in Bitwarden
-      shell: |
-        export BWS_ACCESS_TOKEN="$BW_TOKEN"
-        bws secret create \
-          --name "tsig-algorithm" \
-          --value "{{ tsig_algorithm }}" \
-          --project-id "$BW_PROJECTID"
-      args:
-        executable: /bin/bash
-
-    - name: Store TSIG secret in Bitwarden
-      shell: |
-        export BWS_ACCESS_TOKEN="$BW_TOKEN"
-        bws secret create \
-          --name "tsig-secret" \
-          --value "{{ tsig_secret }}" \
-          --project-id "$BW_PROJECTID"
-      args:
-        executable: /bin/bash
+      no_log: true
 
     ###########################################################################
-    # CONFIGURE TECHNITIUM SETTINGS
+    # 10. CONFIGURE TECHNITIUM SETTINGS
     ###########################################################################
     - name: Configure upstream resolver (Unbound)
       uri:
         url: "{{ technitium_api }}/settings/set"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_api_token }}"
+          X-Auth-Token: "{{ technitium_api_key }}"
         body_format: json
         body:
           RecursiveDnsServers:
@@ -154,7 +187,7 @@
         url: "{{ technitium_api }}/settings/set"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_api_token }}"
+          X-Auth-Token: "{{ technitium_api_key }}"
         body_format: json
         body:
           AllowRecursionFrom:
@@ -172,7 +205,7 @@
         url: "{{ technitium_api }}/settings/set"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_api_token }}"
+          X-Auth-Token: "{{ technitium_api_key }}"
         body_format: json
         body:
           EnableQueryLogging: true
@@ -180,26 +213,28 @@
         status_code: 200
 
     ###########################################################################
-    # IMPORT ZONES
+    # 11. IMPORT DNS ZONES
     ###########################################################################
-    - name: Import zones
+    - name: Import DNS zones
       loop:
         - example.com.zone
         - example.net.zone
         - storage.example.com.zone
+      loop_control:
+        label: "{{ item }}"
       uri:
         url: "{{ technitium_api }}/zone/import"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_api_token }}"
+          X-Auth-Token: "{{ technitium_api_key }}"
         body_format: form-multipart
         body:
-          zone: "{{ lookup('file', zone_path + '/' + item) }}"
+          zone: "{{ lookup('file', zone_dir + '/' + item) }}"
           name: "{{ item | regex_replace('\\.zone$', '') }}"
         status_code: 200
 
     ###########################################################################
-    # RESTART SERVICE
+    # 12. RESTART SERVICE
     ###########################################################################
     - name: Restart Technitium DNS service
       systemd:
@@ -208,4 +243,4 @@
 
     - name: Confirm configuration applied
       debug:
-        msg: "Technitium DNS Server fully configured with bootstrap token, new API key, TSIG keys, Bitwarden secrets, and GitOps automation."
+        msg: "Technitium DNS Server fully configured with a fresh API key, TSIG keys, Bitwarden secrets, and GitOps automation."
