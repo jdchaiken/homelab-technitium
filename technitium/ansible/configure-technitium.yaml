@@ -36,10 +36,14 @@
       no_log: true
 
     - name: Parse Bitwarden credentials and initial admin password
+      # regex_search() with a capture-group argument returns a list (even
+      # with exactly one group), not a scalar -- `| first` unwraps it.
+      # Left as a list, these render as Python repr ("['value']") wherever
+      # they're interpolated into a plain string, e.g. the shell tasks below.
       set_fact:
-        bw_token: "{{ bw_env_raw | regex_search('BW_TOKEN=\"?([^\"\\n]+)\"?', '\\1') }}"
-        bw_projectid: "{{ bw_env_raw | regex_search('BW_PROJECTID=\"?([^\"\\n]+)\"?', '\\1') }}"
-        technitium_admin_password: "{{ bw_env_raw | regex_search('TECHNITIUM_ADMIN_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') }}"
+        bw_token: "{{ bw_env_raw | regex_search('BW_TOKEN=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+        bw_projectid: "{{ bw_env_raw | regex_search('BW_PROJECTID=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+        technitium_admin_password: "{{ bw_env_raw | regex_search('TECHNITIUM_ADMIN_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
       no_log: true
 
     ###########################################################################
@@ -47,15 +51,20 @@
     # Every freshly built VM ships an unconfigured Technitium instance, so the
     # default credentials are always valid here. This playbook is not meant
     # to be re-run against an already-configured instance.
+    #
+    # NOTE: Technitium 15.0+ removed the old /api/login path and X-Auth-Token
+    # header in favor of /api/user/login and an "Authorization: Bearer"
+    # header (installed version here is 15.3). Endpoints below were verified
+    # directly against a live instance, not just the API docs.
     ###########################################################################
     - name: Login to Technitium with default password
       uri:
-        url: "{{ technitium_api }}/login"
+        url: "{{ technitium_api }}/user/login"
         method: POST
-        body_format: json
+        body_format: form-urlencoded
         body:
-          username: "{{ technitium_admin_user }}"
-          password: "admin"
+          user: "{{ technitium_admin_user }}"
+          pass: "admin"
         status_code: 200
       register: login_default
 
@@ -69,14 +78,14 @@
     ###########################################################################
     - name: Change Technitium admin password
       uri:
-        url: "{{ technitium_api }}/changepassword"
+        url: "{{ technitium_api }}/user/changePassword"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_session_token_default }}"
-        body_format: json
+          Authorization: "Bearer {{ technitium_session_token_default }}"
+        body_format: form-urlencoded
         body:
-          oldPassword: "admin"
-          newPassword: "{{ technitium_admin_password }}"
+          pass: "admin"
+          newPass: "{{ technitium_admin_password }}"
         status_code: 200
       no_log: true
 
@@ -85,12 +94,12 @@
     ###########################################################################
     - name: Login with new password
       uri:
-        url: "{{ technitium_api }}/login"
+        url: "{{ technitium_api }}/user/login"
         method: POST
-        body_format: json
+        body_format: form-urlencoded
         body:
-          username: "{{ technitium_admin_user }}"
-          password: "{{ technitium_admin_password }}"
+          user: "{{ technitium_admin_user }}"
+          pass: "{{ technitium_admin_password }}"
         status_code: 200
       register: login_new
       no_log: true
@@ -105,20 +114,20 @@
     ###########################################################################
     - name: Create Technitium API key for Ansible
       uri:
-        url: "{{ technitium_api }}/apikey/add"
+        url: "{{ technitium_api }}/user/createToken"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_session_token }}"
-        body_format: json
+          Authorization: "Bearer {{ technitium_session_token }}"
+        body_format: form-urlencoded
         body:
-          Name: "ansible"
+          tokenName: "ansible"
         status_code: 200
       register: api_key_create
       no_log: true
 
     - name: Extract new Technitium API key
       set_fact:
-        technitium_api_key: "{{ api_key_create.json.ApiKey }}"
+        technitium_api_key: "{{ api_key_create.json.token }}"
       no_log: true
 
     ###########################################################################
@@ -137,20 +146,18 @@
       no_log: true
 
     ###########################################################################
-    # 8. CREATE TSIG KEY FOR RFC2136 UPDATES
+    # 8. GENERATE TSIG KEY FOR RFC2136 UPDATES
+    # Technitium has no server-side "create TSIG key" API that generates a
+    # secret for you -- settings/set's tsigKeys parameter just stores
+    # whatever name/secret/algorithm triple you give it (confirmed against
+    # the API docs and a live instance), so the secret has to be generated
+    # here.
     ###########################################################################
-    - name: Create TSIG key
-      uri:
-        url: "{{ technitium_api }}/tsig/add"
-        method: POST
-        headers:
-          X-Auth-Token: "{{ technitium_api_key }}"
-        body_format: json
-        body:
-          Name: "externaldns-key"
-          Algorithm: "hmac-sha256"
-        status_code: 200
-      register: tsig_create
+    - name: Generate TSIG shared secret
+      set_fact:
+        tsig_key_name: "externaldns-key"
+        tsig_algorithm: "hmac-sha256"
+        tsig_secret: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}"
       no_log: true
 
     ###########################################################################
@@ -159,64 +166,51 @@
     - name: Store TSIG values in Bitwarden
       shell: |
         export BWS_ACCESS_TOKEN="{{ bw_token }}"
-        bws secret create "externaldns-tsig-name" "{{ tsig_create.json.Name }}" "{{ bw_projectid }}"
-        bws secret create "externaldns-tsig-algorithm" "{{ tsig_create.json.Algorithm }}" "{{ bw_projectid }}"
-        bws secret create "externaldns-tsig-secret" "{{ tsig_create.json.Secret }}" "{{ bw_projectid }}"
+        bws secret create "externaldns-tsig-name" "{{ tsig_key_name }}" "{{ bw_projectid }}"
+        bws secret create "externaldns-tsig-algorithm" "{{ tsig_algorithm }}" "{{ bw_projectid }}"
+        bws secret create "externaldns-tsig-secret" "{{ tsig_secret }}" "{{ bw_projectid }}"
       args:
         executable: /bin/bash
       no_log: true
 
     ###########################################################################
     # 10. CONFIGURE TECHNITIUM SETTINGS
+    # Param names verified against a live 15.3 instance -- the field names
+    # used by older Technitium API versions (RecursiveDnsServers,
+    # EnableRecursion, AllowRecursionFrom, EnableQueryLogging, ...) no
+    # longer exist.
     ###########################################################################
-    - name: Configure upstream resolver (Unbound)
+    - name: Configure resolver, ACLs, logging, and TSIG key
       uri:
         url: "{{ technitium_api }}/settings/set"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_api_key }}"
-        body_format: json
+          Authorization: "Bearer {{ technitium_api_key }}"
+        body_format: form-urlencoded
         body:
-          RecursiveDnsServers:
-            - "{{ upstream_resolver_ip }}"
-          EnableRecursion: true
-          EnableDnsSecValidation: true
+          forwarders: "{{ upstream_resolver_ip }}"
+          dnssecValidation: true
+          recursion: "UseSpecifiedNetworkACL"
+          recursionNetworkACL: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+          zoneTransferAllowedNetworks: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+          logQueries: true
+          tsigKeys: "{{ tsig_key_name }}|{{ tsig_secret }}|{{ tsig_algorithm }}"
         status_code: 200
-
-    - name: Configure ACLs
-      uri:
-        url: "{{ technitium_api }}/settings/set"
-        method: POST
-        headers:
-          X-Auth-Token: "{{ technitium_api_key }}"
-        body_format: json
-        body:
-          AllowRecursionFrom:
-            - "172.16.0.0/12"
-            - "192.168.200.0/20"
-            - "192.168.0.0/17"
-          AllowZoneTransferFrom:
-            - "172.16.0.0/12"
-            - "192.168.200.0/20"
-            - "192.168.0.0/17"
-        status_code: 200
-
-    - name: Configure logging
-      uri:
-        url: "{{ technitium_api }}/settings/set"
-        method: POST
-        headers:
-          X-Auth-Token: "{{ technitium_api_key }}"
-        body_format: json
-        body:
-          EnableQueryLogging: true
-          EnableApiLogging: true
-        status_code: 200
+      no_log: true
 
     ###########################################################################
-    # 11. IMPORT DNS ZONES
+    # 11. CREATE DNS ZONES FROM ZONE FILES
+    # zones/import only adds records into a zone that already exists (its
+    # "zone" param is the domain name, not the file to import -- confirmed
+    # against a live instance, where it returned "No such zone was found").
+    # Creating a Primary zone directly from a zone file is done via
+    # zones/create with the file sent as multipart field "zoneFile". The
+    # part MUST carry a filename (dict form below) -- a plain string value
+    # gets sent as a nameless multipart field, which Technitium silently
+    # accepts but ignores, creating an empty zone with only default NS/SOA
+    # records instead of importing the file's contents.
     ###########################################################################
-    - name: Import DNS zones
+    - name: Create Technitium zones from zone files
       loop:
         - example.com.zone
         - example.net.zone
@@ -224,14 +218,16 @@
       loop_control:
         label: "{{ item }}"
       uri:
-        url: "{{ technitium_api }}/zone/import"
+        url: "{{ technitium_api }}/zones/create?zone={{ item | regex_replace('\\.zone$', '') }}&type=Primary"
         method: POST
         headers:
-          X-Auth-Token: "{{ technitium_api_key }}"
+          Authorization: "Bearer {{ technitium_api_key }}"
         body_format: form-multipart
         body:
-          zone: "{{ lookup('file', zone_dir + '/' + item) }}"
-          name: "{{ item | regex_replace('\\.zone$', '') }}"
+          zoneFile:
+            filename: "{{ item }}"
+            content: "{{ lookup('file', zone_dir + '/' + item) }}"
+            mime_type: text/plain
         status_code: 200
 
     ###########################################################################
