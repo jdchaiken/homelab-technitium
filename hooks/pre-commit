@@ -26,8 +26,8 @@ if git diff --cached --name-only | grep -E -q "id_rsa|id_ed25519"; then
     exit 1
 fi
 
-# Block committing TSIG secrets
-if git diff --cached --name-only | grep -q "tsig"; then
+# Block committing TSIG secrets (actual secret/key files, not scripts or docs that merely mention tsig)
+if git diff --cached --name-only | grep -Eqi "(^|/)secrets/[^/]*tsig|tsig[^/]*(secret|key)|(secret|key)[^/]*tsig"; then
     echo "ERROR: TSIG secrets cannot be committed."
     exit 1
 fi
