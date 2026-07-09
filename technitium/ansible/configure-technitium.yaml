@@ -131,22 +131,7 @@
       no_log: true
 
     ###########################################################################
-    # 7. STORE API KEY IN BITWARDEN
-    # NOTE: verify `bws secret create` arguments against the bws CLI version
-    # pinned in install-technitium.yaml (currently v2.1.0) before relying on
-    # this in production - the flag/positional syntax has changed across
-    # bws releases.
-    ###########################################################################
-    - name: Store Technitium API key in Bitwarden
-      shell: |
-        export BWS_ACCESS_TOKEN="{{ bw_token }}"
-        bws secret create "technitium-ansible-api-key" "{{ technitium_api_key }}" "{{ bw_projectid }}"
-      args:
-        executable: /bin/bash
-      no_log: true
-
-    ###########################################################################
-    # 8. GENERATE TSIG KEY FOR RFC2136 UPDATES
+    # 7. GENERATE TSIG KEY FOR RFC2136 UPDATES
     # Technitium has no server-side "create TSIG key" API that generates a
     # secret for you -- settings/set's tsigKeys parameter just stores
     # whatever name/secret/algorithm triple you give it (confirmed against
@@ -161,24 +146,20 @@
       no_log: true
 
     ###########################################################################
-    # 9. STORE TSIG VALUES IN BITWARDEN
-    ###########################################################################
-    - name: Store TSIG values in Bitwarden
-      shell: |
-        export BWS_ACCESS_TOKEN="{{ bw_token }}"
-        bws secret create "externaldns-tsig-name" "{{ tsig_key_name }}" "{{ bw_projectid }}"
-        bws secret create "externaldns-tsig-algorithm" "{{ tsig_algorithm }}" "{{ bw_projectid }}"
-        bws secret create "externaldns-tsig-secret" "{{ tsig_secret }}" "{{ bw_projectid }}"
-      args:
-        executable: /bin/bash
-      no_log: true
-
-    ###########################################################################
-    # 10. CONFIGURE TECHNITIUM SETTINGS
+    # 8. CONFIGURE TECHNITIUM SETTINGS
     # Param names verified against a live 15.3 instance -- the field names
     # used by older Technitium API versions (RecursiveDnsServers,
     # EnableRecursion, AllowRecursionFrom, EnableQueryLogging, ...) no
     # longer exist.
+    #
+    # This MUST run before the "Store ... in Bitwarden" tasks below. The
+    # installer points /etc/resolv.conf at 127.0.0.1 (itself), and
+    # Technitium's default recursion policy (AllowOnlyForPrivateNetworks)
+    # does NOT cover loopback -- only UseSpecifiedNetworkACL gets the "deny
+    # all except loopback" fallback. Until this task switches to that
+    # policy, every system DNS lookup on this box (including `bws` talking
+    # to identity.bitwarden.com) gets SERVFAIL from the local resolver.
+    # Confirmed by sending raw queries to 127.0.0.1 on a freshly booted VM.
     ###########################################################################
     - name: Configure resolver, ACLs, logging, and TSIG key
       uri:
@@ -196,6 +177,34 @@
           logQueries: true
           tsigKeys: "{{ tsig_key_name }}|{{ tsig_secret }}|{{ tsig_algorithm }}"
         status_code: 200
+      no_log: true
+
+    ###########################################################################
+    # 9. STORE API KEY IN BITWARDEN
+    # NOTE: verify `bws secret create` arguments against the bws CLI version
+    # pinned in install-technitium.yaml (currently v2.1.0) before relying on
+    # this in production - the flag/positional syntax has changed across
+    # bws releases.
+    ###########################################################################
+    - name: Store Technitium API key in Bitwarden
+      shell: |
+        export BWS_ACCESS_TOKEN="{{ bw_token }}"
+        bws secret create "technitium-ansible-api-key" "{{ technitium_api_key }}" "{{ bw_projectid }}"
+      args:
+        executable: /bin/bash
+      no_log: true
+
+    ###########################################################################
+    # 10. STORE TSIG VALUES IN BITWARDEN
+    ###########################################################################
+    - name: Store TSIG values in Bitwarden
+      shell: |
+        export BWS_ACCESS_TOKEN="{{ bw_token }}"
+        bws secret create "externaldns-tsig-name" "{{ tsig_key_name }}" "{{ bw_projectid }}"
+        bws secret create "externaldns-tsig-algorithm" "{{ tsig_algorithm }}" "{{ bw_projectid }}"
+        bws secret create "externaldns-tsig-secret" "{{ tsig_secret }}" "{{ bw_projectid }}"
+      args:
+        executable: /bin/bash
       no_log: true
 
     ###########################################################################
