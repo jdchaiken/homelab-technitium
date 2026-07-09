@@ -40,7 +40,8 @@ data "external" "vmid" {
 }
 
 locals {
-  new_vmid = tonumber(data.external.vmid.result.vmid)
+  new_vmid   = tonumber(data.external.vmid.result.vmid)
+  bw_env_tmp = "/tmp/technitium-bw-env-${local.new_vmid}"
 }
 
 ###############################################################################
@@ -122,10 +123,21 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
   # Deliver the Bitwarden env file from the Proxmox host into the guest.
   # qemu-guest-agent cannot do this: it lets the host read/write files in
   # the guest, not the other way around, so a guest-side "file-read" of a
-  # host path silently fails.
+  # host path silently fails. Terraform itself does not run on pve01 either,
+  # so relay the file through a local scratch copy (never stored in state,
+  # unlike a data source would be) fetched over SSH and deleted right after
+  # use.
+  provisioner "local-exec" {
+    command = "ssh root@${var.pm_node} cat /etc/pve/technitium/bw.env > ${local.bw_env_tmp} && chmod 600 ${local.bw_env_tmp}"
+  }
+
   provisioner "file" {
-    source      = "/etc/pve/technitium/bw.env"
+    source      = local.bw_env_tmp
     destination = "/root/bw.env"
+  }
+
+  provisioner "local-exec" {
+    command = "rm -f ${local.bw_env_tmp}"
   }
 
   # Run the Ansible playbooks only now that bw.env is actually present.
@@ -182,16 +194,16 @@ resource "null_resource" "cutover" {
       set -e
 
       echo "Stopping old VM ${var.old_vm_id}..."
-      qm stop ${var.old_vm_id}
+      ssh root@${var.pm_node} "qm stop ${var.old_vm_id}"
 
       PROD_IP="$(echo "${var.prod_vm_ip}" | cut -d'/' -f1)"
       CIDR="$(echo "${var.prod_vm_ip}" | cut -d'/' -f2)"
 
       echo "Setting new VM ${local.new_vmid} to production IP $PROD_IP/$CIDR..."
-      qm set ${local.new_vmid} --ipconfig0 ip=$PROD_IP/$CIDR,gw=${var.gateway_ip}
+      ssh root@${var.pm_node} "qm set ${local.new_vmid} --ipconfig0 ip=$PROD_IP/$CIDR,gw=${var.gateway_ip}"
 
       echo "Rebooting new VM ${local.new_vmid}..."
-      qm reboot ${local.new_vmid}
+      ssh root@${var.pm_node} "qm reboot ${local.new_vmid}"
     EOT
   }
 }
@@ -207,7 +219,7 @@ resource "null_resource" "destroy_old" {
     command = <<-EOT
       set -e
       echo "Destroying old VM ${var.old_vm_id}..."
-      qm destroy ${var.old_vm_id}
+      ssh root@${var.pm_node} "qm destroy ${var.old_vm_id}"
     EOT
   }
 }
