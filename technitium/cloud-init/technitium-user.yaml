@@ -44,28 +44,14 @@ runcmd:
   - systemctl start qemu-guest-agent || true
 
   ###########################################################################
-  # Copy Bitwarden env file from Proxmox host into VM
-  ###########################################################################
-  - /usr/bin/qemu-ga --fsfreeze-freeze || true
-  - /usr/bin/qemu-ga --file-read /etc/pve/technitium/bw.env > /root/bw.env || true
-  - /usr/bin/qemu-ga --fsfreeze-thaw || true
-  - chmod 600 /root/bw.env || true
-
-  ###########################################################################
-  # Ensure Technitium DNS service is enabled and started
-  ###########################################################################
-  - systemctl enable technitium-dns.service || true
-  - systemctl start technitium-dns.service || true
-
-  ###########################################################################
   # Clone your GitOps repo
   ###########################################################################
   - git clone https://gitea.example.com/example-org/technitium.git /opt/infra/technitium || true
 
   ###########################################################################
-  # Run your Technitium Ansible playbooks
+  # bw.env is delivered by Terraform (file provisioner, over SSH) after this
+  # cloud-init run completes, then the Ansible playbooks below are triggered
+  # by Terraform's remote-exec provisioner. See technitium/terraform/main.tf.
   ###########################################################################
-  - ansible-playbook /opt/infra/technitium/technitium/ansible/install-technitium.yaml || true
-  - ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium.yaml || true
 
 final_message: "Technitium DNS Server base image initialized via cloud-init."

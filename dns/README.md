@@ -9,7 +9,8 @@ This directory contains all authoritative DNS data and validation logic.
     dns/
       zones/        # Authoritative zone files
       scripts/      # Validation + serial tools
-      ci/           # Gitea workflows
+
+Gitea workflows live under .gitea/workflows/ at the repo root, not here.
 
 ---
 
@@ -63,11 +64,11 @@ Documents safe TSIG rotation workflow.
 
 ## CI/CD
 
-Gitea workflows live under:
+The Gitea workflow lives at:
 
-    dns/ci/
+    .gitea/workflows/zone-check.yaml
 
-They run:
+It runs:
 
 - Syntax validation
 - Strict diff checker

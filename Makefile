@@ -56,39 +56,19 @@ pull: ## Pull latest infra repo changes
 ###############################################################################
 # Terraform Deployment (Full GitOps Flow)
 ###############################################################################
-deploy: ## Deploy Technitium DNS via Terraform + Ansible + DNS readiness
+deploy: ## Deploy Technitium DNS via Terraform (VM create, cloud-init runs Ansible, DNS cutover — all handled by Terraform)
 		cd technitium/terraform && terraform init && terraform apply -auto-approve -var-file=local/terraform.tfvars
 
-		@echo "$(BLUE)Waiting for VM SSH availability...$(RESET)"
-		@VM_IP=$$(grep ansible_host technitium/ansible/inventory/technitium.ini | awk -F= '{print $$2}'); \
-		for i in $$(seq 1 60); do \
-				if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 ubuntu@$$VM_IP "echo ok" >/dev/null 2>&1; then \
-						echo "$(GREEN)SSH is ready on $$VM_IP$(RESET)"; \
+		@echo "$(BLUE)Confirming DNS on production IP...$(RESET)"
+		@PROD_IP=$$(grep '^prod_vm_ip' technitium/terraform/local/terraform.tfvars | sed -E 's/.*"([0-9.]+)\/[0-9]+".*/\1/'); \
+		for i in $$(seq 1 30); do \
+				if dig +short @$$PROD_IP technitium.example.com SOA >/dev/null 2>&1; then \
+						echo "$(GREEN)DNS is live on $$PROD_IP$(RESET)"; \
 						break; \
 				fi; \
 				sleep 5; \
-				if [ $$i -eq 60 ]; then \
-						echo "$(YELLOW)SSH did not become ready in time$(RESET)"; \
-						exit 1; \
-				fi; \
-		done
-
-		@echo "$(BLUE)Running Technitium install playbook...$(RESET)"
-		ansible-playbook -i technitium/ansible/inventory/technitium.ini technitium/ansible/install-technitium.yaml
-
-		@echo "$(BLUE)Running Technitium configure playbook...$(RESET)"
-		ansible-playbook -i technitium/ansible/inventory/technitium.ini technitium/ansible/configure-technitium.yaml
-
-		@echo "$(BLUE)Waiting for DNS readiness...$(RESET)"
-		@VM_IP=$$(grep ansible_host technitium/ansible/inventory/technitium.ini | awk -F= '{print $$2}'); \
-		for i in $$(seq 1 60); do \
-				if dig +short @$$VM_IP technitium.example.com SOA >/dev/null 2>&1; then \
-						echo "$(GREEN)DNS is ready on $$VM_IP$(RESET)"; \
-						break; \
-				fi; \
-				sleep 5; \
-				if [ $$i -eq 60 ]; then \
-						echo "$(YELLOW)DNS did not become ready in time$(RESET)"; \
+				if [ $$i -eq 30 ]; then \
+						echo "$(YELLOW)DNS did not confirm on production IP in time$(RESET)"; \
 						exit 1; \
 				fi; \
 		done

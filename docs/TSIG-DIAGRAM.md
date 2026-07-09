@@ -1,9 +1,7 @@
 ```mermaid
 flowchart TD
 
-A[Create new TSIG in Technitium] --> B[Store in Bitwarden]
-B --> C[Update Secret IDs in repo]
-C --> D[Commit + push]
-D --> E[CI validates]
-E --> F[make deploy]
-F --> G[Technitium reloads zones]
+A[make deploy] --> B[Fresh VM built via Terraform + cloud-init]
+B --> C[configure-technitium.yaml generates externaldns-key TSIG]
+C --> D[Ansible writes TSIG name/algorithm/secret to Bitwarden]
+D --> E[Point ExternalDNS at refreshed Bitwarden values]

@@ -38,8 +38,8 @@ Authoritative zone files for internal domains.
 - Serial auto-increment
 - TSIG rotation helper
 
-## CI/CD (dns/ci/)
-Gitea workflows enforcing DNS correctness.
+## CI/CD (.gitea/workflows/zone-check.yaml)
+Gitea workflow enforcing DNS correctness.
 
 ## Technitium (technitium/)
 - Ansible install + configure
@@ -56,14 +56,14 @@ Bitwarden env templates.
 
 Terraform:
 
-1. Allocates VMID (4000–4999)
-2. Creates temporary VM (172.16.100.7)
-3. Applies cloud-init
-4. Runs Ansible
-5. Validates DNS
-6. Stops old VM
-7. Swaps IPs
-8. Destroys old VM
+1. Allocates a VMID (via next-vmid.sh)
+2. Creates the temporary VM from the cloud-init template
+3. Waits for cloud-init to finish — cloud-init clones this repo onto the
+   VM and runs the install + configure Ansible playbooks locally
+   (Ansible is never invoked remotely from outside the VM)
+4. Polls DNS on the temporary IP until Technitium answers
+5. Stops the old VM, moves the new VM to the production IP, reboots it
+6. Destroys the old VM
 
 Zero downtime.
 
@@ -71,15 +71,15 @@ Zero downtime.
 
 # 5. TSIG Key Management
 
-TSIG keys stored in Bitwarden.
-
-Ansible retrieves:
+Ansible generates a TSIG key (`externaldns-key`) via the Technitium API
+on every deploy, then writes it to Bitwarden:
 
 - TSIG Name
 - TSIG Algorithm
 - TSIG Secret
 
-Using Secret IDs.
+Ansible never retrieves a pre-existing TSIG key — it always generates a
+fresh one and overwrites the stored values.
 
 ---
 
@@ -100,7 +100,8 @@ CI/CD ensures:
 - Secrets never stored in Git
 - Bitwarden credentials stored in Proxmox
 - Cloud-init copies secrets securely
-- Ansible fetches secrets at runtime
+- Ansible reads bw.env locally and writes generated secrets to
+  Bitwarden — it never fetches secrets from Bitwarden
 
 ---
 

@@ -12,13 +12,19 @@ Real secrets live in:
 
     /etc/pve/technitium/bw.env
 
-Bitwarden stores:
+bw.env holds the Bitwarden service account token/org/project plus
+TECHNITIUM_ADMIN_PASSWORD (the password Ansible sets on Technitium's
+default `admin` account on first boot).
 
+Bitwarden stores what Ansible generates and writes there:
+
+- Technitium Ansible API key
 - TSIG Name
 - TSIG Algorithm
 - TSIG Secret
 
-Ansible retrieves secrets using Secret IDs.
+Ansible never retrieves secrets from Bitwarden — it only reads bw.env
+locally and writes the secrets it generates.
 
 ---
 

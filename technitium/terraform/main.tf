@@ -52,9 +52,9 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
   node_name = var.target_node
   vm_id     = local.new_vmid
 
-  # Clone Debian cloud-init template (VMID 9000)
+  # Clone Debian cloud-init template
   clone {
-    vm_id = 9000
+    vm_id = var.cloudinit_template
     full  = false
   }
 
@@ -104,17 +104,39 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
     }
   }
 
+  connection {
+    type        = "ssh"
+    user        = "root"
+    host        = trimspace(element(split("/", var.temp_vm_ip), 0))
+    private_key = file(var.ssh_privkey)
+  }
+
+  # Wait for cloud-init (package installs, repo clone) to finish before
+  # touching the VM further.
   provisioner "remote-exec" {
     inline = [
       "cloud-init status --wait"
     ]
+  }
 
-    connection {
-      type        = "ssh"
-      user        = "root"
-      host        = trimspace(element(split("/", var.temp_vm_ip), 0))
-      private_key = file("~/.ssh/id_ed25519")
-    }
+  # Deliver the Bitwarden env file from the Proxmox host into the guest.
+  # qemu-guest-agent cannot do this: it lets the host read/write files in
+  # the guest, not the other way around, so a guest-side "file-read" of a
+  # host path silently fails.
+  provisioner "file" {
+    source      = "/etc/pve/technitium/bw.env"
+    destination = "/root/bw.env"
+  }
+
+  # Run the Ansible playbooks only now that bw.env is actually present.
+  # (These used to run from cloud-init's runcmd, which starts them before
+  # Terraform has a chance to deliver bw.env.)
+  provisioner "remote-exec" {
+    inline = [
+      "chmod 600 /root/bw.env",
+      "ansible-playbook /opt/infra/technitium/technitium/ansible/install-technitium.yaml",
+      "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium.yaml",
+    ]
   }
 }
 
@@ -132,11 +154,11 @@ resource "null_resource" "wait_for_dns" {
       VM_IP="$(echo "${var.temp_vm_ip}" | cut -d'/' -f1)"
       HOSTNAME="technitium.example.com"
 
-      echo "Waiting for DNS on $$VM_IP..."
+      echo "Waiting for DNS on $VM_IP..."
 
       for i in $(seq 1 360); do
-        if dig +short @$$VM_IP $$HOSTNAME SOA >/dev/null 2>&1; then
-          echo "DNS is ready on $$VM_IP"
+        if dig +short @$VM_IP $HOSTNAME SOA >/dev/null 2>&1; then
+          echo "DNS is ready on $VM_IP"
           exit 0
         fi
         sleep 5
@@ -165,8 +187,8 @@ resource "null_resource" "cutover" {
       PROD_IP="$(echo "${var.prod_vm_ip}" | cut -d'/' -f1)"
       CIDR="$(echo "${var.prod_vm_ip}" | cut -d'/' -f2)"
 
-      echo "Setting new VM ${local.new_vmid} to production IP $$PROD_IP/$$CIDR..."
-      qm set ${local.new_vmid} --ipconfig0 ip=$$PROD_IP/$$CIDR,gw=${var.gateway_ip}
+      echo "Setting new VM ${local.new_vmid} to production IP $PROD_IP/$CIDR..."
+      qm set ${local.new_vmid} --ipconfig0 ip=$PROD_IP/$CIDR,gw=${var.gateway_ip}
 
       echo "Rebooting new VM ${local.new_vmid}..."
       qm reboot ${local.new_vmid}

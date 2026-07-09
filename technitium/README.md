@@ -25,14 +25,17 @@ Located under:
 Installs Technitium DNS Server.
 
 ### configure-technitium.yaml
-Configures:
+Bootstraps Technitium's default admin account, mints a permanent API
+key, then configures:
 
-- TSIG keys (via Bitwarden)
+- TSIG keys (generated via the Technitium API, written to Bitwarden)
 - Upstream resolvers
 - ACLs
 - Logging
 - Zone imports
 - RFC2136 support
+
+No manual API key creation is required — see INSTALL.md.
 
 ---
 
@@ -45,9 +48,8 @@ Located under:
 Cloud-init:
 
 - Clones the Git repo
-- Copies Bitwarden env
-- Exports Bitwarden credentials
-- Runs Ansible install + configure
+- Copies bw.env from the Proxmox host
+- Runs Ansible install + configure locally on the VM
 
 ---
 
@@ -60,7 +62,7 @@ Located under:
 Terraform automates:
 
 - VM creation
-- VMID allocation (4000–4999)
+- VMID allocation
 - Cloud-init provisioning
 - DNS readiness checks
 - Zero-downtime cutover
@@ -70,7 +72,9 @@ Terraform automates:
 
     technitium/terraform/scripts/next-vmid.sh
 
-Finds next available VMID in 4000–4999.
+Returns the highest VMID in use cluster-wide, plus 1 (intended for the
+4000–4999 GitOps range — see VMID.md for a known gap in range
+enforcement).
 
 ---
 

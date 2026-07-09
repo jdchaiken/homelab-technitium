@@ -6,11 +6,11 @@ This runbook describes how to diagnose and resolve DNS outages.
 
 # 1. Check Technitium Health
 
-    systemctl status dns.service
+    systemctl status technitium.service
 
 If not running:
 
-    systemctl restart dns.service
+    systemctl restart technitium.service
 
 ---
 
@@ -28,7 +28,7 @@ If no response:
 
 # 3. Check Logs
 
-    journalctl -u dns.service -n 100
+    journalctl -u technitium.service -n 100
 
 Look for:
 
@@ -64,10 +64,8 @@ This performs a zero-downtime rebuild.
 
 If ExternalDNS fails:
 
-- Rotate TSIG key
-- Update Bitwarden
-- Update Secret IDs
-- Redeploy
+- Rotate the TSIG key by running `make deploy` (see docs/TSIG-ROTATION.md)
+- Point ExternalDNS at the refreshed Bitwarden secret values
 
 ---
 

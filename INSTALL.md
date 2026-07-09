@@ -73,9 +73,13 @@ Contents:
 
     BW_TOKEN="YOUR_BITWARDEN_SERVICE_ACCOUNT_TOKEN"
     BW_ORGID="YOUR_BITWARDEN_ORG_ID"
-    BW_PROJECTID="YOUR_BITWARDARDEN_PROJECT_ID"
-    TECHNITIUM_BOOTSTRAP_TOKEN_ID="YOUR_BOOTSTRAP_API_KEY_SECRET_ID"
+    BW_PROJECTID="YOUR_BITWARDEN_PROJECT_ID"
+    TECHNITIUM_ADMIN_PASSWORD="YOUR_NEW_TECHNITIUM_ADMIN_PASSWORD"
 
+TECHNITIUM_ADMIN_PASSWORD is the password Ansible will set on Technitium's
+built-in `admin` account the first time it configures a freshly built VM
+(Technitium ships with `admin`/`admin` by default). No manual API key
+creation is required — see step 6.
 
 Permissions:
 
@@ -137,105 +141,74 @@ This step is manual only once.
 5. Configure Terraform
 ---------------------------------------------------------------------
 
-Edit:
+Copy the example vars file and edit it:
 
-    technitium/terraform/terraform.tfvars
+    cp technitium/terraform/terraform.tfvars.example technitium/terraform/local/terraform.tfvars
 
 YOU MUST EDIT THIS SECTION
 
 Set Proxmox connection:
 
-    pm_api_url        = "https://your-proxmox.example.com:8006/api2/json"
-    pm_user           = "root@pam"
-    pm_password       = "CHANGEME"
-    pm_node           = "pve01"
+    pm_api_url  = "https://your-proxmox.example.com:8006/api2/json"
+    pm_user     = "root@pam"
+    pm_password = "CHANGEME"
+    pm_node     = "pve01"
+    target_node = "pve01"
+    datastore   = "tank"
 
-Set cloud-init template VMID:
+Set the cloud-init image and (optionally) template VMID:
 
-    cloudinit_template = 9000
+    cloud_init_image_id = "tank:iso/debian-13-generic-amd64.qcow2"
+    cloudinit_template   = 9000   # optional, defaults to 9000
 
-Set SSH keys:
+Set VM credentials and SSH keys:
 
-    ssh_pubkey        = "~/.ssh/id_ed25519.pub"
-    ssh_privkey       = "~/.ssh/id_ed25519"
+    vm_password = "CHANGEME"
+    ssh_pubkey  = "ssh-ed25519 AAAA...yourkey"
+    ssh_privkey = "~/.ssh/id_ed25519"   # optional, defaults to ~/.ssh/id_ed25519
 
 Set previous VM ID (for zero-downtime cutover):
 
-    old_vm_id         = 4000
+    old_vm_id = 3000
 
-Set IP configuration:
+Set networking:
 
-    TEMP_VM_IP        = "X.X.X.X"
-    PROD_VM_IP        = "Y.Y.Y.Y"
-    GATEWAY_IP        = "Z.Z.Z.Z"
-    UNBOUND_IP        = "A.A.A.A"
+    temp_vm_ip = "X.X.X.X/24"
+    prod_vm_ip = "Y.Y.Y.Y/24"
+    gateway_ip = "Z.Z.Z.Z"
 
-All values belong inside terraform.tfvars.
-
----------------------------------------------------------------------
-6. Initial Deployment (Creates Technitium)
----------------------------------------------------------------------
-
-Run:
-
-    make deploy
-
-This performs the first full build:
-
-Terraform → Proxmox → Cloud-init → Ansible → Technitium
-
-After this step:
-- The VM exists
-- Technitium is installed
-- You can log in
-- You can create the Technitium bootstrap API key
-
-The bootstrap API key cannot be created before this step.
+All values belong inside `technitium/terraform/local/terraform.tfvars`
+(git-ignored — this is where real, per-environment values live;
+`terraform.tfvars.example` is the checked-in template).
 
 ---------------------------------------------------------------------
-7. Create Bootstrap API Key (One Time Only)
----------------------------------------------------------------------
-
-The bootstrap API key is used only for initial authentication. All other API keys and TSIG keys are created automatically.
-
-Steps:
-
-1. Open Technitium UI
-2. Settings -> API Keys -> Add
-3. Name: bootstrap
-4. Copy the API key value
-5. Store it in Bitwarden Secrets Manager:
-       Name: technitium-bootstrap-token
-       Value: <the API key>
-6. Copy the Bitwarden Secret ID
-7. Set TECHNITIUM_BOOTSTRAP_TOKEN_ID in /etc/pve/technitium/bw.env
-
-After this step, no manual API or TSIG key creation is required.
-
-
----------------------------------------------------------------------
-8. Redeploy with Automatic API and TSIG Creation
+6. Deploy Technitium
 ---------------------------------------------------------------------
 
 Run:
 
     make deploy
 
-During this run, Ansible will:
+This is the only deploy command you need, first run or every run after.
+`make deploy` runs `terraform apply`, which handles the entire flow:
 
-- Retrieve the bootstrap API key from Bitwarden
-- Create a new Technitium API key for Ansible
-- Store the new API key in Bitwarden
-- Automatically generate TSIG keys in Technitium
-- Store TSIG name, algorithm, and secret in Bitwarden
-- Import DNS zones
-- Configure recursion, ACLs, and logging
+1. Allocates a VMID
+2. Creates the VM from the cloud-init template
+3. Waits for cloud-init to finish — cloud-init clones this repo onto the
+   VM and runs the install + configure Ansible playbooks locally
+4. During configuration, Ansible logs into Technitium's default
+   `admin`/`admin` account, sets it to TECHNITIUM_ADMIN_PASSWORD, and
+   mints a fresh permanent API key — no manual API key creation, ever
+5. Ansible generates a TSIG key and imports DNS zones
+6. Terraform polls DNS on the temporary IP until Technitium answers
+7. Terraform stops the old VM, moves the new VM to the production IP,
+   and reboots it
+8. Terraform destroys the old VM
 
-No manual steps are required in Technitium after the bootstrap API key is created.
-
+Zero downtime, fully automated, no manual steps in the Technitium UI.
 
 ---------------------------------------------------------------------
-9. Configure DNS Zones
+7. Configure DNS Zones
 ---------------------------------------------------------------------
 
 Edit zone files:
@@ -253,7 +226,7 @@ Validate:
 Commit and push.
 
 ---------------------------------------------------------------------
-10. CI/CD Validation
+8. CI/CD Validation
 ---------------------------------------------------------------------
 
 Gitea validates:
@@ -264,37 +237,32 @@ Gitea validates:
 - Secrets
 - Git hooks
 
+See docs/CI-PIPELINE.md for the exact checks and their trigger paths.
+
 Fix any failures.
 
 ---------------------------------------------------------------------
-11. Deploy Technitium (Zero Downtime)
+9. Redeploy (Zero Downtime)
 ---------------------------------------------------------------------
 
 Run:
 
     make deploy
 
-Terraform will:
-1. Allocate VMID (4000–4999)
-2. Create temporary VM at TEMP_VM_IP
-3. Apply cloud-init
-4. Run Ansible
-5. Validate DNS
-6. Stop old VM
-7. Swap IPs
-8. Destroy old VM
-
-Zero downtime.
+Every deploy builds a brand-new VM and cuts over to it with zero
+downtime (see step 6 for the full sequence). There is nothing
+version-specific to redo — the same command handles the first deploy,
+zone updates, and TSIG rotation.
 
 ---------------------------------------------------------------------
-12. Validate DNS
+10. Validate DNS
 ---------------------------------------------------------------------
 
     dig @PROD_VM_IP SOA
     dig @PROD_VM_IP <hostname> A
 
 ---------------------------------------------------------------------
-13. TSIG Rotation
+11. TSIG Rotation
 ---------------------------------------------------------------------
 
 See:
@@ -302,23 +270,23 @@ See:
     docs/TSIG-ROTATION.md
 
 ---------------------------------------------------------------------
-14. Summary
+12. Summary
 ---------------------------------------------------------------------
 
 You must manually configure:
-- Proxmox Bitwarden env
-- Terraform variables
+- Proxmox Bitwarden env (including TECHNITIUM_ADMIN_PASSWORD)
+- Terraform variables (`technitium/terraform/local/terraform.tfvars`)
 - SSH keys
 - IP addresses
-- Unbound resolver IP
-- The bootstrap API key Secret ID
+- Upstream resolver IP (`upstream_resolver_ip` in
+  technitium/ansible/configure-technitium.yaml)
 
 
 Everything else is automated:
 - CI/CD
 - Terraform
 - Cloud-init
-- Ansible
+- Ansible (including Technitium bootstrap, API key, and TSIG creation)
 - Zero-downtime rebuilds
 
 ---------------------------------------------------------------------
@@ -330,14 +298,18 @@ Appendix: Manual-Edit Variable Table
 | pm_api_url | Proxmox API endpoint | https://proxmox.example.com:8006/api2/json |
 | pm_user | Proxmox username | root@pam |
 | pm_password | Proxmox password | CHANGEME |
-| pm_node | Proxmox node name | pve01 |
-| cloudinit_template | VMID of cloud-init template | 9000 |
+| pm_node | Node used for VMID allocation script | pve01 |
+| target_node | Node where the temporary VM will be created | pve01 |
+| datastore | Proxmox datastore | tank |
+| cloud_init_image_id | Storage path of the cloud-init image | tank:iso/debian-13-generic-amd64.qcow2 |
+| cloudinit_template | VMID of the cloud-init template to clone (optional, default 9000) | 9000 |
+| temp_vm_ip | Temporary VM IP in CIDR format | 172.16.100.7/24 |
+| prod_vm_ip | Production VM IP in CIDR format | 172.16.100.6/24 |
+| gateway_ip | Default gateway | 172.16.100.1 |
+| vm_password | Root password set via cloud-init | CHANGEME |
 | ssh_pubkey | SSH public key | ~/.ssh/id_ed25519.pub |
-| ssh_privkey | SSH private key | ~/.ssh/id_ed25519 |
-| old_vm_id | Current production VMID | 4000 |
-| TEMP_VM_IP | Temporary VM IP | X.X.X.X |
-| PROD_VM_IP | Production VM IP | Y.Y.Y.Y |
-| GATEWAY_IP | Gateway IP | Z.Z.Z.Z |
-| UNBOUND_IP | Recursive resolver IP | A.A.A.A |
-| TECHNITIUM_BOOTSTRAP_TOKEN_ID | Bitwarden Secret ID for bootstrap API key | <UUID> |
+| ssh_privkey | SSH private key path (optional, default ~/.ssh/id_ed25519) | ~/.ssh/id_ed25519 |
+| old_vm_id | Current production VMID | 3000 |
+| TECHNITIUM_ADMIN_PASSWORD | Initial Technitium admin password, set in `/etc/pve/technitium/bw.env` | \<a strong password\> |
+| upstream_resolver_ip | Recursive resolver IP, set in `technitium/ansible/configure-technitium.yaml` vars | 172.16.100.1 |
 

@@ -9,6 +9,7 @@
     technitium_api: "{{ technitium_url }}/api"
     technitium_admin_user: "admin"
     zone_dir: "/opt/infra/technitium/dns/zones"
+    upstream_resolver_ip: "172.16.100.1"
 
   tasks:
     ###########################################################################
@@ -177,7 +178,7 @@
         body_format: json
         body:
           RecursiveDnsServers:
-            - "172.16.10.1"
+            - "{{ upstream_resolver_ip }}"
           EnableRecursion: true
           EnableDnsSecValidation: true
         status_code: 200

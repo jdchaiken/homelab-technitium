@@ -7,6 +7,7 @@ target_node = "pve01"
 datastore   = "tank"
 
 cloud_init_image_id = "tank:iso/debian-13-generic-amd64.qcow2"
+# cloudinit_template = 9000                # optional, defaults to 9000
 
 temp_vm_ip = "172.16.100.7/24"
 prod_vm_ip = "172.16.100.6/24"
@@ -14,5 +15,6 @@ gateway_ip = "172.16.100.1"
 
 vm_password = "CHANGE_ME"
 ssh_pubkey  = "ssh-ed25519 AAAA...yourkey"
+# ssh_privkey = "~/.ssh/id_ed25519"        # optional, defaults to ~/.ssh/id_ed25519
 
 old_vm_id = 3000

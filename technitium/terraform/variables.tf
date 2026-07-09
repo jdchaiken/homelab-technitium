@@ -43,6 +43,12 @@ variable "cloud_init_image_id" {
   description = "Storage path of cloud-init image"
 }
 
+variable "cloudinit_template" {
+  type        = number
+  default     = 9000
+  description = "VMID of the Debian cloud-init template to clone"
+}
+
 ###############################################################################
 # Networking
 ###############################################################################
@@ -73,6 +79,12 @@ variable "vm_password" {
 variable "ssh_pubkey" {
   type        = string
   description = "SSH public key"
+}
+
+variable "ssh_privkey" {
+  type        = string
+  default     = "~/.ssh/id_ed25519"
+  description = "Path to the SSH private key used for Terraform provisioners"
 }
 
 ###############################################################################

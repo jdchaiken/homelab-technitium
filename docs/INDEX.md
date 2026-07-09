@@ -3,6 +3,12 @@
 This index provides a quick reference to all documentation in the GitOps DNS repository.
 
 ---------------------------------------------------------------------
+Start Here
+---------------------------------------------------------------------
+- GETTING-STARTED.md
+- DOC-MAP.md
+
+---------------------------------------------------------------------
 Architecture
 ---------------------------------------------------------------------
 - ARCHITECTURE.md
@@ -12,6 +18,14 @@ Architecture
 - LIFECYCLE.md
 - SECRETS-FLOW.md
 - VMID.md
+
+---------------------------------------------------------------------
+CI/CD
+---------------------------------------------------------------------
+- CI-PIPELINE.md
+- CI-DIAGRAM.md
+- WORKFLOW-DIAGRAM.md
+- TSIG-DIAGRAM.md
 
 ---------------------------------------------------------------------
 Operations

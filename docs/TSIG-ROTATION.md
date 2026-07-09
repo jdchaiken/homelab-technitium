@@ -2,59 +2,45 @@
 
 TSIG keys authenticate RFC2136 DNS updates from ExternalDNS.
 
-Rotation uses the same GitOps workflow as DNS changes.
+Rotation is a side effect of the normal zero-downtime rebuild — there is
+no separate manual rotation procedure.
 
 ---
 
-# 1. Create New TSIG Key
-
-In Technitium UI:
-
-1. Settings → TSIG Keys → Add
-2. Name: externaldns-key
-3. Algorithm: hmac-sha256
-4. Secret: Generate
-5. Save
-
----
-
-# 2. Store in Bitwarden
-
-Create three secrets:
-
-    externaldns-tsig-name
-    externaldns-tsig-algorithm
-    externaldns-tsig-secret
-
-Copy Secret IDs.
-
----
-
-# 3. Update Ansible
-
-Edit:
-
-    technitium/ansible/configure-technitium.yaml
-
-Set new Secret IDs.
-
----
-
-# 4. Commit + Push
-
-CI/CD validates.
-
----
-
-# 5. Deploy
-
-Run:
+# 1. Rebuild Technitium
 
     make deploy
 
-Terraform rebuilds Technitium with new TSIG key.
+This builds a brand-new VM. `configure-technitium.yaml` runs on it fresh
+and automatically:
 
-Zero downtime.
+- Generates a new TSIG key named `externaldns-key` (hmac-sha256) via the
+  Technitium API
+- Overwrites the following secrets in Bitwarden with the new values:
+
+      externaldns-tsig-name
+      externaldns-tsig-algorithm
+      externaldns-tsig-secret
+
+Nothing needs to be created in the Technitium UI, and there are no
+Secret IDs hardcoded in the playbook to edit — the key name is fixed
+(`externaldns-key`) and the values are pushed to Bitwarden under fixed
+secret names every run.
+
+---
+
+# 2. Update ExternalDNS
+
+Point ExternalDNS at the new secret values in Bitwarden
+(`externaldns-tsig-name`/`externaldns-tsig-algorithm`/`externaldns-tsig-secret`).
+
+---
+
+# 3. Verify
+
+    dig @PROD_VM_IP SOA
+
+Confirm ExternalDNS updates are still accepted with the new key.
 
 ---
 
@@ -62,8 +48,8 @@ Zero downtime.
 
 TSIG rotation is:
 
-1. Create key
-2. Store in Bitwarden
-3. Update Secret IDs
-4. Commit + push
-5. Deploy
+1. `make deploy` (rebuilds the VM, generates and stores a new TSIG key)
+2. Point ExternalDNS at the refreshed Bitwarden secret values
+3. Verify
+
+Zero downtime.

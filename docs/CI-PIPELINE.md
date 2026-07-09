@@ -27,34 +27,35 @@ with the GitOps workflow.
 
 # 2. Trigger Paths
 
-The pipeline runs when any of the following paths change:
+The pipeline runs when any of the following paths change (relative to the
+repo root):
 
-    infra/technitium/dns/zones/**
-    infra/technitium/dns/scripts/**
-    infra/technitium/hooks/**
-    infra/technitium/Makefile
+    dns/zones/**
+    dns/scripts/**
+    hooks/**
+    Makefile
 
 ---
 
 # 3. CI Workflow Definition
 
-Below is the workflow used in Gitea Actions:
+Below is the workflow used in Gitea Actions (`.gitea/workflows/zone-check.yaml`):
 
     name: Zone File Validation (Combined)
 
     on:
       push:
         paths:
-          - "infra/technitium/dns/zones/**"
-          - "infra/technitium/dns/scripts/**"
-          - "infra/technitium/hooks/**"
-          - "infra/technitium/Makefile"
+          - "dns/zones/**"
+          - "dns/scripts/**"
+          - "Makefile"
+          - "hooks/**"
       pull_request:
         paths:
-          - "infra/technitium/dns/zones/**"
-          - "infra/technitium/dns/scripts/**"
-          - "infra/technitium/hooks/**"
-          - "infra/technitium/Makefile"
+          - "dns/zones/**"
+          - "dns/scripts/**"
+          - "Makefile"
+          - "hooks/**"
 
     jobs:
       zone-check:
@@ -73,13 +74,13 @@ Below is the workflow used in Gitea Actions:
 
           - name: Verify Git hook integrity
             run: |
-              chmod +x infra/technitium/hooks/verify-hooks.sh
-              infra/technitium/hooks/verify-hooks.sh
+              chmod +x hooks/verify-hooks.sh
+              hooks/verify-hooks.sh
 
           - name: Run detect-secrets baseline validation
             run: |
               pip install detect-secrets
-              detect-secrets-hook --baseline infra/technitium/.detect-secrets.json
+              detect-secrets-hook --baseline .detect-secrets.json
 
           - name: Run git-secrets scan
             run: |
@@ -87,29 +88,26 @@ Below is the workflow used in Gitea Actions:
 
           - name: Run syntax validation (make validate-zones)
             run: |
-              cd infra/technitium
               make validate-zones
 
           - name: Run strict zone diff checker
             run: |
-              cd infra/technitium
               bash dns/scripts/zone-diff-strict.sh
 
           - name: Save diff output
             id: diff
             run: |
-              cd infra/technitium
               bash dns/scripts/zone-diff.sh > diff_output.txt || true
 
           - name: Upload diff as artifact
             uses: actions/upload-artifact@v3
             with:
               name: zone-diff
-              path: infra/technitium/diff_output.txt
+              path: diff_output.txt
 
           - name: Validate Terraform (optional)
             run: |
-              cd infra/technitium/technitium/terraform
+              cd technitium/terraform
               terraform init -input=false
               terraform validate
 

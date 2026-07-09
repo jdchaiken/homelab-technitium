@@ -1,141 +1,51 @@
-# CI Pipeline – Zone Validation and Security Enforcement
+# Documentation Map
 
-This document describes the CI/CD pipeline used to validate DNS zone files,
-enforce Git hook integrity, and prevent secrets from entering the repository.
-
-The pipeline runs on every push and pull request that modifies DNS zones,
-DNS scripts, Git hooks, or the Makefile.
+A guided path through this repository's documentation, grouped by what
+you're trying to do. For a flat categorized list of every doc, see
+docs/INDEX.md.
 
 ---
 
-# 1. What the Pipeline Enforces
+## New to this repo?
 
-The CI pipeline performs the following checks:
+Read in this order:
 
-1. Git hook integrity
-2. detect-secrets baseline validation
-3. git-secrets scanning
-4. DNS zone syntax validation (named-checkzone)
-5. Strict zone diff validation
-6. Terraform validation (optional)
-7. Artifact upload for zone diffs
+1. docs/GETTING-STARTED.md — fastest path to understanding the platform
+2. docs/ONBOARDING.md — how to make and submit a DNS change
+3. docs/ARCHITECTURE.md — how the pieces fit together
+   (see also ARCHITECTURE-DIAGRAM.md / ARCHITECTURE-MERMAID.md for
+   visual versions, and INFRA-OVERVIEW.md for a simplified box diagram)
 
-These checks ensure that all DNS changes are safe, validated, and compliant
-with the GitOps workflow.
+## Setting up the infrastructure from scratch?
 
----
+- INSTALL.md — full install/bootstrap walkthrough, including the
+  "manual-edit" variables you must set before `make deploy`
+- docs/SECRETS-FLOW.md — how credentials move from Proxmox to Technitium
+- docs/LIFECYCLE.md — what `terraform apply` actually does, step by step
 
-# 2. Trigger Paths
+## Running day-to-day operations?
 
-The pipeline runs when any of the following paths change:
+- docs/OPERATIONS.md — daily operator tasks
+- docs/CHEATSHEET.md — copy-pasteable command reference
+- docs/DNS-QUICKSTART.md — adding/editing DNS records
+- docs/TSIG-ROTATION.md — rotating the RFC2136 TSIG key
+- docs/OUTAGE-RUNBOOK.md — what to do when DNS is down
 
-    infra/technitium/dns/zones/**
-    infra/technitium/dns/scripts/**
-    infra/technitium/hooks/**
-    infra/technitium/Makefile
+## Understanding CI/CD?
 
----
+- docs/CI-PIPELINE.md — what the Gitea workflow checks and how to
+  reproduce failures locally
+- docs/CI-DIAGRAM.md / docs/WORKFLOW-DIAGRAM.md — visual pipeline flow
+- docs/TSIG-DIAGRAM.md — TSIG key flow diagram
 
-# 3. CI Workflow Definition
+## Contributing code or docs?
 
-Below is the workflow used in Gitea Actions:
+- docs/DEV-QUICKSTART.md — developer machine setup
+- CONTRIBUTING.md — contribution guidelines
+- SECURITY.md — secret handling and security principles
+- CHANGELOG.md — release history
 
-    name: Zone File Validation (Combined)
+## Looking for a specific file?
 
-    on:
-      push:
-        paths:
-          - "infra/technitium/dns/zones/**"
-          - "infra/technitium/dns/scripts/**"
-          - "infra/technitium/hooks/**"
-          - "infra/technitium/Makefile"
-      pull_request:
-        paths:
-          - "infra/technitium/dns/zones/**"
-          - "infra/technitium/dns/scripts/**"
-          - "infra/technitium/hooks/**"
-          - "infra/technitium/Makefile"
-
-    jobs:
-      zone-check:
-        runs-on: ubuntu-latest
-
-        steps:
-          - name: Checkout repository
-            uses: actions/checkout@v3
-            with:
-              fetch-depth: 0
-
-          - name: Install system dependencies
-            run: |
-              sudo apt-get update
-              sudo apt-get install -y bind9-utils shellcheck yamllint terraform
-
-          - name: Verify Git hook integrity
-            run: |
-              chmod +x infra/technitium/hooks/verify-hooks.sh
-              infra/technitium/hooks/verify-hooks.sh
-
-          - name: Run detect-secrets baseline validation
-            run: |
-              pip install detect-secrets
-              detect-secrets-hook --baseline infra/technitium/.detect-secrets.json
-
-          - name: Run git-secrets scan
-            run: |
-              git secrets --scan
-
-          - name: Run syntax validation (make validate-zones)
-            run: |
-              cd infra/technitium
-              make validate-zones
-
-          - name: Run strict zone diff checker
-            run: |
-              cd infra/technitium
-              bash dns/scripts/zone-diff-strict.sh
-
-          - name: Save diff output
-            id: diff
-            run: |
-              cd infra/technitium
-              bash dns/scripts/zone-diff.sh > diff_output.txt || true
-
-          - name: Upload diff as artifact
-            uses: actions/upload-artifact@v3
-            with:
-              name: zone-diff
-              path: infra/technitium/diff_output.txt
-
-          - name: Validate Terraform (optional)
-            run: |
-              cd infra/technitium/technitium/terraform
-              terraform init -input=false
-              terraform validate
-
----
-
-# 4. Troubleshooting
-
-If the pipeline fails:
-
-1. Run make validate-zones locally
-2. Run dns/scripts/zone-diff-strict.sh locally
-3. Run make verify-hooks
-4. Run detect-secrets scan
-5. Run git secrets --scan
-6. Validate Terraform manually
-
----
-
-# 5. Summary
-
-The CI pipeline ensures:
-
-- DNS changes are validated
-- Secrets cannot be committed
-- Git hooks remain enforced
-- Terraform remains valid
-- Operators and developers follow the GitOps workflow
-
-This pipeline is required for all DNS changes.
+See docs/INDEX.md for the complete categorized list of every doc and
+script in this repository.

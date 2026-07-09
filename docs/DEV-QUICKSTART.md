@@ -53,7 +53,7 @@ Git hooks will block:
 - .tfstate
 - TSIG secrets
 - SSH private keys
-- invalid commit messages
+- commit messages under 5 characters (vague messages like "fix"/"update" get a warning, not a block)
 
 CI/CD enforces strict zone validation and SOA rules.
 

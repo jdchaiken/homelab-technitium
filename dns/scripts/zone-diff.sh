@@ -2,7 +2,7 @@
 set -e
 
 MAIN_BRANCH="origin/main"
-ZONE_DIR="zones"
+ZONE_DIR="dns/zones"
 
 echo "=== Zone Diff Checker ==="
 
