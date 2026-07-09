@@ -83,6 +83,9 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
       # from reality after a successful cutover. Without this, any later
       # apply would "correct" the live production VM back to the temp IP.
       initialization,
+      # Cutover also renames the VM from "technitium-temp" to "technitium"
+      # via `qm set`, for the same out-of-band reason as initialization above.
+      name,
     ]
   }
 
@@ -244,6 +247,9 @@ resource "null_resource" "cutover" {
 
       echo "Setting new VM ${local.new_vmid} to production IP $PROD_IP/$CIDR..."
       ssh root@${var.pm_node} "qm set ${local.new_vmid} --ipconfig0 ip=$PROD_IP/$CIDR,gw=${var.gateway_ip}"
+
+      echo "Renaming new VM ${local.new_vmid} to ${var.prod_vm_name}..."
+      ssh root@${var.pm_node} "qm set ${local.new_vmid} --name ${var.prod_vm_name}"
 
       echo "Rebooting new VM ${local.new_vmid}..."
       ssh root@${var.pm_node} "qm reboot ${local.new_vmid}"

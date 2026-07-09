@@ -62,6 +62,12 @@ variable "prod_vm_ip" {
   description = "Production VM IP in CIDR format"
 }
 
+variable "prod_vm_name" {
+  type        = string
+  default     = "technitium"
+  description = "Name the VM is renamed to (via `qm set --name`) once cutover completes"
+}
+
 variable "gateway_ip" {
   type        = string
   description = "Default gateway"

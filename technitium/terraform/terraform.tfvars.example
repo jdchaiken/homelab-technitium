@@ -12,6 +12,7 @@ cloud_init_image_id = "tank:iso/debian-13-generic-amd64.qcow2"
 temp_vm_ip = "172.16.100.7/24"
 prod_vm_ip = "172.16.100.6/24"
 gateway_ip = "172.16.100.1"
+# prod_vm_name = "technitium"              # optional, defaults to "technitium"
 
 vm_password = "CHANGE_ME"
 ssh_pubkey  = "ssh-ed25519 AAAA...yourkey"
