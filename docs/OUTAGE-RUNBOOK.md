@@ -6,11 +6,11 @@ This runbook describes how to diagnose and resolve DNS outages.
 
 # 1. Check Technitium Health
 
-    systemctl status technitium.service
+    systemctl status dns.service
 
 If not running:
 
-    systemctl restart technitium.service
+    systemctl restart dns.service
 
 ---
 
@@ -28,7 +28,7 @@ If no response:
 
 # 3. Check Logs
 
-    journalctl -u technitium.service -n 100
+    journalctl -u dns.service -n 100
 
 Look for:
 

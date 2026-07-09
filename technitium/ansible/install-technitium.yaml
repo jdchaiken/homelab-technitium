@@ -57,35 +57,23 @@
       args:
         executable: /bin/bash
 
-    - name: Install Technitium systemd unit
-      copy:
-        src: technitium.service
-        dest: /etc/systemd/system/technitium.service
-        mode: "0644"
-
-    - name: Reload systemd
-      command: systemctl daemon-reload
-
-    - name: Enable and start Technitium service
-      systemd:
-        name: technitium.service
-        enabled: true
-        state: started
-
     ###########################################################################
-    # VALIDATE SYSTEMD SERVICE
+    # VALIDATE + ENSURE SYSTEMD SERVICE
+    # The official installer already creates and starts its own hardened
+    # dns.service unit (unprivileged dns-server user, systemd sandboxing).
+    # Do not install a second unit here -- an earlier revision of this
+    # playbook shipped a separate root-run technitium.service pointed at the
+    # same binary, and it lost the race for port 5380 against dns.service,
+    # crash-looping forever (start-limit-hit).
     ###########################################################################
     - name: Check if Technitium systemd unit exists
       stat:
-        path: /etc/systemd/system/technitium.service
+        path: /etc/systemd/system/dns.service
       register: technitium_unit
 
-    ###########################################################################
-    # ENABLE + START TECHNITIUM SERVICE
-    ###########################################################################
     - name: Enable and start Technitium service
       systemd:
-        name: technitium.service
+        name: dns.service
         enabled: true
         state: started
 

@@ -239,7 +239,7 @@
     ###########################################################################
     - name: Restart Technitium DNS service
       systemd:
-        name: technitium.service
+        name: dns.service
         state: restarted
 
     - name: Confirm configuration applied
