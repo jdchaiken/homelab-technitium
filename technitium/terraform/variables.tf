@@ -94,3 +94,20 @@ variable "old_vm_id" {
   type        = number
   description = "VMID of old Technitium VM"
 }
+
+###############################################################################
+# Rebuild Trigger
+###############################################################################
+variable "rebuild_id" {
+  type        = string
+  default     = "1"
+  description = <<-EOT
+    Bump this (e.g. "2", "3", or a date) to force a full rebuild: a new
+    temp VM is built, DNS is validated on it, cutover moves it to
+    prod_vm_ip, and old_vm_id is destroyed. Without changing this, `terraform
+    apply` is a safe no-op against an already-cutover VM -- vm_id and
+    initialization drift are ignored on purpose so routine applies can't
+    force-replace or revert a live production VM (see technitium_temp's
+    lifecycle block in main.tf).
+  EOT
+}

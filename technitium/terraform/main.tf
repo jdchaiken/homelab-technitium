@@ -45,6 +45,18 @@ locals {
 }
 
 ###############################################################################
+# Rebuild Trigger
+# A plain `terraform apply` must be a safe no-op against an already-cutover
+# VM (see ignore_changes below), so replacement can't be driven by ordinary
+# input drift. Bumping var.rebuild_id is the only thing that forces a real
+# rebuild: new temp VM -> DNS check -> cutover -> destroy old_vm_id.
+###############################################################################
+
+resource "terraform_data" "rebuild_trigger" {
+  input = var.rebuild_id
+}
+
+###############################################################################
 # Temporary Technitium VM (Cloud-init)
 ###############################################################################
 
@@ -54,12 +66,16 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
   vm_id     = local.new_vmid
 
   lifecycle {
+    replace_triggered_by = [terraform_data.rebuild_trigger]
     ignore_changes = [
       # vm_id comes from data.external.vmid, which re-runs next-vmid.sh on
       # every plan/apply and can return a different value each time (e.g.
       # once the cluster has more VMs). vm_id is ForceNew, so without this
       # a routine `terraform apply` with zero config changes would force-
       # replace this VM just because the allocator's answer moved on.
+      # (A deliberate rebuild via replace_triggered_by still picks up
+      # whatever next-vmid.sh currently returns, since ignore_changes only
+      # suppresses in-place update diffs, not the value used on create.)
       vm_id,
       # The cutover null_resource moves this VM to prod_vm_ip via `qm set`
       # outside of Terraform's own model, so the resource's declared
@@ -174,6 +190,12 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
 ###############################################################################
 
 resource "null_resource" "wait_for_dns" {
+  # Re-run whenever technitium_temp is actually replaced (new .id), not on
+  # every apply -- see the rebuild trigger note above technitium_temp.
+  triggers = {
+    vm_instance_id = proxmox_virtual_environment_vm.technitium_temp.id
+  }
+
   depends_on = [proxmox_virtual_environment_vm.technitium_temp]
 
   provisioner "local-exec" {
@@ -204,6 +226,10 @@ resource "null_resource" "wait_for_dns" {
 ###############################################################################
 
 resource "null_resource" "cutover" {
+  triggers = {
+    vm_instance_id = proxmox_virtual_environment_vm.technitium_temp.id
+  }
+
   depends_on = [null_resource.wait_for_dns]
 
   provisioner "local-exec" {
@@ -230,6 +256,10 @@ resource "null_resource" "cutover" {
 ###############################################################################
 
 resource "null_resource" "destroy_old" {
+  triggers = {
+    vm_instance_id = proxmox_virtual_environment_vm.technitium_temp.id
+  }
+
   depends_on = [null_resource.cutover]
 
   provisioner "local-exec" {
