@@ -53,6 +53,23 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
   node_name = var.target_node
   vm_id     = local.new_vmid
 
+  lifecycle {
+    ignore_changes = [
+      # vm_id comes from data.external.vmid, which re-runs next-vmid.sh on
+      # every plan/apply and can return a different value each time (e.g.
+      # once the cluster has more VMs). vm_id is ForceNew, so without this
+      # a routine `terraform apply` with zero config changes would force-
+      # replace this VM just because the allocator's answer moved on.
+      vm_id,
+      # The cutover null_resource moves this VM to prod_vm_ip via `qm set`
+      # outside of Terraform's own model, so the resource's declared
+      # initialization (still pointing at temp_vm_ip) permanently drifts
+      # from reality after a successful cutover. Without this, any later
+      # apply would "correct" the live production VM back to the temp IP.
+      initialization,
+    ]
+  }
+
   # Clone Debian cloud-init template
   clone {
     vm_id = var.cloudinit_template

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VMIDS=$(pvesh get /cluster/resources --type vm 2>/dev/null | jq -r '.[].vmid' 2>/dev/null || true)
+VMIDS=$(pvesh get /cluster/resources --type vm --output-format json 2>/dev/null | jq -r '.[].vmid' 2>/dev/null || true)
 
 if [ -z "$VMIDS" ]; then
   NEXT_VMID=4000
