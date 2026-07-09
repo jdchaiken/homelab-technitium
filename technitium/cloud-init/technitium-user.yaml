@@ -20,6 +20,7 @@ packages:
   - wget
   - ca-certificates
   - ansible
+  - jq
   - unzip
 
 timezone: America/New_York
