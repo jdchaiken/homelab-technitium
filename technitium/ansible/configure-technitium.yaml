@@ -1,5 +1,5 @@
 ---
-- name: Configure Technitium DNS Server declaratively
+- name: Configure Technitium DNS Server declaratively (BWS version)
   hosts: localhost
   become: true
 
@@ -8,6 +8,9 @@
     zone_path: "/opt/infra/technitium/zones"
 
   tasks:
+    ###########################################################################
+    # WAIT FOR TECHNITIUM API
+    ###########################################################################
     - name: Wait for Technitium API to become available
       uri:
         url: "{{ technitium_api }}/status"
@@ -19,21 +22,26 @@
       until: api_status.status == 200
 
     ###########################################################################
-    # BITWARDEN LOGIN + UNLOCK
+    # LOAD BITWARDEN SECRETS MANAGER ENVIRONMENT
     ###########################################################################
-
-    - name: Load Bitwarden environment file
+    - name: Load Bitwarden Secrets Manager environment variables
       shell: |
-        export $(cat /etc/pve/technitium/bw.env | xargs)
-        bw login --apikey
-        bw unlock "$BW_PASSWORD" --raw > /root/bw_session
+        export $(cat /root/bw.env | xargs)
+      args:
+        executable: /bin/bash
+
+    ###########################################################################
+    # CONFIGURE BWS CLI WITH ACCESS TOKEN
+    ###########################################################################
+    - name: Configure BWS CLI with access token
+      shell: |
+        bws configure set access_token "$BW_TOKEN"
       args:
         executable: /bin/bash
 
     ###########################################################################
     # AUTO-GENERATE TSIG KEY IN TECHNITIUM
     ###########################################################################
-
     - name: Generate TSIG key in Technitium
       uri:
         url: "{{ technitium_api }}/tsig/add"
@@ -53,34 +61,38 @@
         tsig_secret: "{{ tsig_create.json.Secret }}"
 
     ###########################################################################
-    # STORE TSIG IN BITWARDEN SECRETS MANAGER
+    # STORE TSIG VALUES IN BITWARDEN SECRETS MANAGER
     ###########################################################################
-
-    - name: Store TSIG name in Bitwarden
+    - name: Store TSIG name in Bitwarden Secrets Manager
       shell: |
-        export BW_SESSION=$(cat /root/bw_session)
-        bw secret create --key tsig-name --value "{{ tsig_name }}" --projectid "$BW_PROJECTID"
+        bws secret create \
+          --name "tsig-name" \
+          --value "{{ tsig_name }}" \
+          --project-id "$BW_PROJECTID"
       args:
         executable: /bin/bash
 
-    - name: Store TSIG algorithm in Bitwarden
+    - name: Store TSIG algorithm in Bitwarden Secrets Manager
       shell: |
-        export BW_SESSION=$(cat /root/bw_session)
-        bw secret create --key tsig-algorithm --value "{{ tsig_algorithm }}" --projectid "$BW_PROJECTID"
+        bws secret create \
+          --name "tsig-algorithm" \
+          --value "{{ tsig_algorithm }}" \
+          --project-id "$BW_PROJECTID"
       args:
         executable: /bin/bash
 
-    - name: Store TSIG secret in Bitwarden
+    - name: Store TSIG secret in Bitwarden Secrets Manager
       shell: |
-        export BW_SESSION=$(cat /root/bw_session)
-        bw secret create --key tsig-secret --value "{{ tsig_secret }}" --projectid "$BW_PROJECTID"
+        bws secret create \
+          --name "tsig-secret" \
+          --value "{{ tsig_secret }}" \
+          --project-id "$BW_PROJECTID"
       args:
         executable: /bin/bash
 
     ###########################################################################
     # CONFIGURE TECHNITIUM SETTINGS
     ###########################################################################
-
     - name: Configure upstream resolver (Unbound)
       uri:
         url: "{{ technitium_api }}/settings/set"
@@ -122,7 +134,6 @@
     ###########################################################################
     # IMPORT ZONES
     ###########################################################################
-
     - name: Import zones
       loop:
         - example.com.zone
@@ -140,7 +151,6 @@
     ###########################################################################
     # RESTART SERVICE
     ###########################################################################
-
     - name: Restart Technitium DNS service
       systemd:
         name: technitium.service
@@ -148,4 +158,4 @@
 
     - name: Confirm configuration applied
       debug:
-        msg: "Technitium DNS Server fully configured with auto-generated TSIG + Bitwarden + GitOps."
+        msg: "Technitium DNS Server fully configured with auto-generated TSIG + Bitwarden Secrets Manager + GitOps."

@@ -31,10 +31,21 @@
     ###########################################################################
     # INSTALL BITWARDEN CLI
     ###########################################################################
-    - name: Download Bitwarden CLI
+    - name: Download Bitwarden Secrets Manager CLI (AMD64)
       get_url:
-        url: "https://vault.bitwarden.com/download/?app=cli&platform=linux"
-        dest: /usr/local/bin/bw
+        url: "https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.1.0/bws-x86_64-unknown-linux-gnu-2.1.0.zip"
+        dest: "/tmp/bws.zip"
+        mode: "0644"
+
+    - name: Extract BWS CLI
+      unarchive:
+        src: "/tmp/bws.zip"
+        dest: "/usr/local/bin/"
+        remote_src: true
+
+    - name: Ensure BWS CLI is executable
+      file:
+        path: "/usr/local/bin/bws"
         mode: "0755"
 
     ###########################################################################
@@ -46,6 +57,21 @@
       args:
         executable: /bin/bash
 
+    - name: Install Technitium systemd unit
+      copy:
+        src: technitium.service
+        dest: /etc/systemd/system/technitium.service
+        mode: "0644"
+
+    - name: Reload systemd
+      command: systemctl daemon-reload
+
+    - name: Enable and start Technitium service
+      systemd:
+        name: technitium.service
+        enabled: true
+        state: started
+
     ###########################################################################
     # VALIDATE SYSTEMD SERVICE
     ###########################################################################
@@ -53,11 +79,6 @@
       stat:
         path: /etc/systemd/system/technitium.service
       register: technitium_unit
-
-    - name: Fail if Technitium did not install correctly
-      fail:
-        msg: "Technitium installer failed — systemd unit not found."
-      when: not technitium_unit.stat.exists
 
     ###########################################################################
     # ENABLE + START TECHNITIUM SERVICE

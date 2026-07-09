@@ -20,12 +20,20 @@ packages:
   - wget
   - ca-certificates
   - ansible
+  - unzip
 
 timezone: America/New_York
 
 write_files:
   - path: /opt/infra/.gitkeep
     content: ""
+  - path: /root/bw.env
+    content: |
+      BW_CLIENTID=...
+      BW_CLIENTSECRET=...
+      BW_PASSWORD=...
+      BW_PROJECTID=...
+    permissions: "0600"
 
 runcmd:
   - apt-get update -y || true
