@@ -36,7 +36,7 @@
     - name: Retrieve Technitium bootstrap API token
       shell: |
         export BWS_ACCESS_TOKEN="$BW_TOKEN"
-        bws secret get "$TECHNITIUM_BOOTSTRAP_TOKEN_ID" --value
+        bws secret get "$TECHNITIUM_BOOTSTRAP_TOKEN_ID" | jq -r '.value'
       register: bootstrap_token_raw
       args:
         executable: /bin/bash
