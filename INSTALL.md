@@ -74,6 +74,8 @@ Contents:
     BW_TOKEN="YOUR_BITWARDEN_SERVICE_ACCOUNT_TOKEN"
     BW_ORGID="YOUR_BITWARDEN_ORG_ID"
     BW_PROJECTID="YOUR_BITWARDARDEN_PROJECT_ID"
+    TECHNITIUM_BOOTSTRAP_TOKEN_ID="YOUR_BOOTSTRAP_API_KEY_SECRET_ID"
+
 
 Permissions:
 
@@ -186,65 +188,51 @@ After this step:
 - The VM exists
 - Technitium is installed
 - You can log in
-- You can create TSIG keys
+- You can create the Technitium bootstrap API key
 
-TSIG keys cannot be created before this step.
+The bootstrap API key cannot be created before this step.
 
 ---------------------------------------------------------------------
-7. Configure TSIG Keys
+7. Create Bootstrap API Key (One Time Only)
 ---------------------------------------------------------------------
 
-TSIG keys authenticate RFC2136 updates from ExternalDNS.
+The bootstrap API key is used only for initial authentication. All other API keys and TSIG keys are created automatically.
 
-7.1 Create TSIG key in Technitium
+Steps:
 
 1. Open Technitium UI
-2. Settings → TSIG Keys → Add
-3. Name: externaldns-key
-4. Algorithm: hmac-sha256
-5. Secret: Generate
-6. Save
+2. Settings -> API Keys -> Add
+3. Name: bootstrap
+4. Copy the API key value
+5. Store it in Bitwarden Secrets Manager:
+       Name: technitium-bootstrap-token
+       Value: <the API key>
+6. Copy the Bitwarden Secret ID
+7. Set TECHNITIUM_BOOTSTRAP_TOKEN_ID in /etc/pve/technitium/bw.env
 
-Record:
-- TSIG Name
-- TSIG Algorithm
-- TSIG Secret (base64)
+After this step, no manual API or TSIG key creation is required.
 
-7.2 Store TSIG values in Bitwarden
-
-Create secrets:
-
-    externaldns-tsig-name
-    externaldns-tsig-algorithm
-    externaldns-tsig-secret
-
-Copy their Secret IDs.
-
-7.3 Update Ansible
-
-Edit:
-
-    technitium/ansible/configure-technitium.yaml
-
-YOU MUST EDIT THIS SECTION
-
-Set:
-
-    tsig_name_secret_id: "YOUR_SECRET_ID"
-    tsig_algorithm_secret_id: "YOUR_SECRET_ID"
-    tsig_secret_secret_id: "YOUR_SECRET_ID"
-
-Commit and push.
 
 ---------------------------------------------------------------------
-8. Redeploy with TSIG Keys
+8. Redeploy with Automatic API and TSIG Creation
 ---------------------------------------------------------------------
 
 Run:
 
     make deploy
 
-This rebuilds the VM with TSIG configuration applied.
+During this run, Ansible will:
+
+- Retrieve the bootstrap API key from Bitwarden
+- Create a new Technitium API key for Ansible
+- Store the new API key in Bitwarden
+- Automatically generate TSIG keys in Technitium
+- Store TSIG name, algorithm, and secret in Bitwarden
+- Import DNS zones
+- Configure recursion, ACLs, and logging
+
+No manual steps are required in Technitium after the bootstrap API key is created.
+
 
 ---------------------------------------------------------------------
 9. Configure DNS Zones
@@ -323,7 +311,8 @@ You must manually configure:
 - SSH keys
 - IP addresses
 - Unbound resolver IP
-- TSIG Secret IDs
+- The bootstrap API key Secret ID
+
 
 Everything else is automated:
 - CI/CD
@@ -350,3 +339,5 @@ Appendix: Manual-Edit Variable Table
 | PROD_VM_IP | Production VM IP | Y.Y.Y.Y |
 | GATEWAY_IP | Gateway IP | Z.Z.Z.Z |
 | UNBOUND_IP | Recursive resolver IP | A.A.A.A |
+| TECHNITIUM_BOOTSTRAP_TOKEN_ID | Bitwarden Secret ID for bootstrap API key | <UUID> |
+
