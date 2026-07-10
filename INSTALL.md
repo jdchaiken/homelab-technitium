@@ -75,11 +75,17 @@ Contents:
     BW_ORGID="YOUR_BITWARDEN_ORG_ID"
     BW_PROJECTID="YOUR_BITWARDEN_PROJECT_ID"
     TECHNITIUM_ADMIN_PASSWORD="YOUR_NEW_TECHNITIUM_ADMIN_PASSWORD"
+    CLOUDFLARE_API_TOKEN="YOUR_CLOUDFLARE_API_TOKEN"
 
 TECHNITIUM_ADMIN_PASSWORD is the password Ansible will set on Technitium's
 built-in `admin` account the first time it configures a freshly built VM
 (Technitium ships with `admin`/`admin` by default). No manual API key
 creation is required — see step 6.
+
+CLOUDFLARE_API_TOKEN (scoped to DNS edit on example.com) is used by
+configure-technitium-tls.yaml on every deploy to issue a Let's Encrypt
+certificate for ns1.example.com via Cloudflare DNS-01, enabling
+DNS-over-TLS/HTTPS/HTTP3/QUIC.
 
 Permissions:
 
@@ -274,7 +280,7 @@ See:
 ---------------------------------------------------------------------
 
 You must manually configure:
-- Proxmox Bitwarden env (including TECHNITIUM_ADMIN_PASSWORD)
+- Proxmox Bitwarden env (including TECHNITIUM_ADMIN_PASSWORD, CLOUDFLARE_API_TOKEN)
 - Terraform variables (`technitium/terraform/local/terraform.tfvars`)
 - SSH keys
 - IP addresses
@@ -311,5 +317,6 @@ Appendix: Manual-Edit Variable Table
 | ssh_privkey | SSH private key path (optional, default ~/.ssh/id_ed25519) | ~/.ssh/id_ed25519 |
 | old_vm_id | Current production VMID | 3000 |
 | TECHNITIUM_ADMIN_PASSWORD | Initial Technitium admin password, set in `/etc/pve/technitium/bw.env` | \<a strong password\> |
+| CLOUDFLARE_API_TOKEN | Cloudflare token (DNS edit) for Let's Encrypt DNS-01, set in `/etc/pve/technitium/bw.env` | \<a scoped API token\> |
 | upstream_resolver_ip | Recursive resolver IP, set in `technitium/ansible/configure-technitium.yaml` vars | 172.16.100.1 |
 
