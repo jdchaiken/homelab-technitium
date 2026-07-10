@@ -1,0 +1,333 @@
+# Optional Technitium DNS Apps -- commented-out scaffold, not run by anything.
+#
+# Everything below is disabled. To use it:
+#   1. Uncomment the app(s) you want (strip the leading "#" from each line,
+#      keeping the rest of the line -- e.g. `sed -i 's/^#//' this_file.yaml`
+#      on a copy, or your editor's "toggle block comment").
+#   2. Fill in the placeholder values (domains, URLs, thresholds) for real.
+#   3. Add any new secrets to /etc/pve/technitium/bw.env on the Proxmox host
+#      (see secrets/bw.env.sample) -- NEVER hardcode a real secret here.
+#   4. Either add this file as another ansible-playbook line in
+#      technitium/terraform/main.tf's "Run the Ansible playbooks" remote-exec
+#      block (right after configure-technitium.yaml), or run it by hand
+#      later against an already-deployed instance:
+#        ansible-playbook technitium/ansible/configure-technitium-apps.yaml
+#
+# Store URLs, install/config API endpoints, and every default config JSON
+# shown below were verified live against a running Technitium 15.3 instance
+# on 2026-07-10 (installed each app for real, pulled its actual
+# /api/apps/config/get default, then uninstalled it again) -- not guessed
+# from API docs alone. See configure-technitium.yaml for the API quirks
+# this whole repo already learned the hard way (Bearer auth, form-urlencoded
+# bodies, multipart fields needing an explicit filename, etc.) -- the same
+# patterns are reused here.
+#
+# Secrets used below, and the bw.env keys they read (add these to bw.env
+# only for the apps you actually enable):
+#   TECHNITIUM_QUERYLOGS_PG_PASSWORD   -- Query Logs (PostgreSQL) DB password
+#   TECHNITIUM_FAILOVER_SMTP_PASSWORD  -- Failover app's SMTP alert password
+#   TECHNITIUM_LOGEXPORTER_HTTP_TOKEN  -- Log Exporter's HTTP sink auth token
+#
+# Auto PTR and Weighted Round Robin need no config at all (confirmed live:
+# GET config returns "#This app requires no config."). Advanced Blocking's
+# example config below has no secrets, just block list URLs.
+#
+#---
+#- name: Configure optional Technitium DNS Apps
+#  hosts: localhost
+#  become: true
+#  gather_facts: false
+#
+#  vars:
+#    technitium_url: "http://localhost:5380"
+#    technitium_api: "{{ technitium_url }}/api"
+#    technitium_admin_user: "admin"
+#
+#  tasks:
+#    ###########################################################################
+#    # AUTH -- same pattern as configure-technitium.yaml: read bw.env for the
+#    # admin password, log in, get a session token. If you chain this file
+#    # after configure-technitium.yaml in the same ansible-playbook run
+#    # instead, you can drop this block and reuse technitium_api_key instead
+#    # of technitium_session_token in the tasks below.
+#    ###########################################################################
+#    - name: Read Bitwarden environment file
+#      set_fact:
+#        bw_env_raw: "{{ lookup('file', '/root/bw.env') }}"
+#      no_log: true
+#
+#    - name: Parse secrets needed by DNS Apps below
+#      set_fact:
+#        technitium_admin_password: "{{ bw_env_raw | regex_search('TECHNITIUM_ADMIN_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+#        querylogs_pg_password: "{{ bw_env_raw | regex_search('TECHNITIUM_QUERYLOGS_PG_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+#        logexporter_http_token: "{{ bw_env_raw | regex_search('TECHNITIUM_LOGEXPORTER_HTTP_TOKEN=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+#        failover_smtp_password: "{{ bw_env_raw | regex_search('TECHNITIUM_FAILOVER_SMTP_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+#      no_log: true
+#
+#    - name: Log in to Technitium
+#      uri:
+#        url: "{{ technitium_api }}/user/login"
+#        method: POST
+#        body_format: form-urlencoded
+#        body:
+#          user: "{{ technitium_admin_user }}"
+#          pass: "{{ technitium_admin_password }}"
+#        status_code: 200
+#      register: apps_login
+#      no_log: true
+#
+#    - name: Extract session token
+#      set_fact:
+#        technitium_session_token: "{{ apps_login.json.token }}"
+#      no_log: true
+#
+#    ###########################################################################
+#    # AUTO PTR -- generates PTR records automatically for A/AAAA records in
+#    # primary/forwarder zones. Confirmed live: this app has no config file
+#    # at all (GET config returns "#This app requires no config.").
+#    ###########################################################################
+#    - name: Install Auto PTR app
+#      uri:
+#        url: "{{ technitium_api }}/apps/downloadAndInstall"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Auto PTR"
+#          url: "https://download.technitium.com/dns/apps/AutoPtrApp-v5.zip"
+#        status_code: 200
+#
+#    ###########################################################################
+#    # WEIGHTED ROUND ROBIN -- APP records that distribute answers across
+#    # multiple IPs by weight. Also no config file (confirmed live).
+#    ###########################################################################
+#    - name: Install Weighted Round Robin app
+#      uri:
+#        url: "{{ technitium_api }}/apps/downloadAndInstall"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Weighted Round Robin"
+#          url: "https://download.technitium.com/dns/apps/WeightedRoundRobinApp-v5.zip"
+#        status_code: 200
+#
+#    ###########################################################################
+#    # ADVANCED BLOCKING -- per-client/per-network blocking groups, each with
+#    # its own allow/block lists. No secrets involved. The config below is the
+#    # verified default shape trimmed to a single "everyone" group covering
+#    # 0.0.0.0/0 and ::/0 -- replace with your own groups/network map/lists.
+#    ###########################################################################
+#    - name: Install Advanced Blocking app
+#      uri:
+#        url: "{{ technitium_api }}/apps/downloadAndInstall"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Advanced Blocking"
+#          url: "https://download.technitium.com/dns/apps/AdvancedBlockingApp-v11.1.zip"
+#        status_code: 200
+#
+#    - name: Configure Advanced Blocking app
+#      uri:
+#        url: "{{ technitium_api }}/apps/config/set"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Advanced Blocking"
+#          config: |
+#            {
+#              "enableBlocking": true,
+#              "blockingAnswerTtl": 30,
+#              "blockListUrlUpdateIntervalHours": 24,
+#              "networkGroupMap": {
+#                "0.0.0.0/0": "everyone",
+#                "[::]/0": "everyone"
+#              },
+#              "groups": [
+#                {
+#                  "name": "everyone",
+#                  "enableBlocking": true,
+#                  "allowTxtBlockingReport": true,
+#                  "blockAsNxDomain": true,
+#                  "blockingAddresses": ["0.0.0.0", "::"],
+#                  "allowed": [],
+#                  "blocked": [],
+#                  "allowListUrls": [],
+#                  "blockListUrls": [
+#                    "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"
+#                  ],
+#                  "allowedRegex": [],
+#                  "blockedRegex": [],
+#                  "regexAllowListUrls": [],
+#                  "regexBlockListUrls": [],
+#                  "adblockListUrls": []
+#                }
+#              ]
+#            }
+#        status_code: 200
+#
+#    ###########################################################################
+#    # FAILOVER -- health-checked APP records with optional email/webhook
+#    # alerting. smtpServer/alertTo/webhook urls below are placeholders --
+#    # fill in for real before flipping "enabled" to true. The SMTP password
+#    # is a real secret and comes from bw.env, never hardcoded.
+#    ###########################################################################
+#    - name: Install Failover app
+#      uri:
+#        url: "{{ technitium_api }}/apps/downloadAndInstall"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Failover"
+#          url: "https://download.technitium.com/dns/apps/FailoverApp-v10.1.zip"
+#        status_code: 200
+#
+#    - name: Configure Failover app
+#      uri:
+#        url: "{{ technitium_api }}/apps/config/set"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Failover"
+#          config: |
+#            {
+#              "healthChecks": [
+#                {
+#                  "name": "https",
+#                  "type": "https",
+#                  "interval": 60,
+#                  "retries": 3,
+#                  "timeout": 10,
+#                  "url": null,
+#                  "emailAlert": "default",
+#                  "webHook": "default"
+#                }
+#              ],
+#              "emailAlerts": [
+#                {
+#                  "name": "default",
+#                  "enabled": false,
+#                  "alertTo": ["admin@example.com"],
+#                  "smtpServer": "smtp.example.com",
+#                  "smtpPort": 465,
+#                  "startTls": false,
+#                  "smtpOverTls": true,
+#                  "username": "alerts@example.com",
+#                  "password": "{{ failover_smtp_password }}",
+#                  "mailFrom": "alerts@example.com",
+#                  "mailFromName": "DNS Server Alert"
+#                }
+#              ],
+#              "webHooks": [
+#                {
+#                  "name": "default",
+#                  "enabled": false,
+#                  "urls": ["https://webhooks.example.com/default"]
+#                }
+#              ],
+#              "underMaintenance": []
+#            }
+#        status_code: 200
+#      no_log: true
+#
+#    ###########################################################################
+#    # LOG EXPORTER -- ships query logs to file/HTTP/syslog sinks. File and
+#    # syslog below have no secrets. The HTTP sink's Authorization header is a
+#    # real secret and comes from bw.env -- all three sinks are disabled by
+#    # default; flip "enabled" once the relevant fields are filled in for real.
+#    ###########################################################################
+#    - name: Install Log Exporter app
+#      uri:
+#        url: "{{ technitium_api }}/apps/downloadAndInstall"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Log Exporter"
+#          url: "https://download.technitium.com/dns/apps/LogExporterApp-v3.0.1.zip"
+#        status_code: 200
+#
+#    - name: Configure Log Exporter app
+#      uri:
+#        url: "{{ technitium_api }}/apps/config/set"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Log Exporter"
+#          config: |
+#            {
+#              "maxQueueSize": 1000000,
+#              "enableEdnsLogging": false,
+#              "file": {
+#                "path": "./dns_logs.json",
+#                "enabled": false
+#              },
+#              "http": {
+#                "endpoint": "https://logs.example.com/ingest",
+#                "headers": {
+#                  "Authorization": "Bearer {{ logexporter_http_token }}"
+#                },
+#                "enabled": false
+#              },
+#              "syslog": {
+#                "address": "127.0.0.1",
+#                "port": 514,
+#                "protocol": "UDP",
+#                "enabled": false
+#              }
+#            }
+#        status_code: 200
+#      no_log: true
+#
+#    ###########################################################################
+#    # QUERY LOGS (POSTGRESQL) -- replaces the default query log storage with
+#    # PostgreSQL. host/port/user/database below are placeholders to set per
+#    # environment, not secrets -- the connectionString's Password= is the
+#    # real secret and comes from bw.env, never hardcoded.
+#    ###########################################################################
+#    - name: Install Query Logs (PostgreSQL) app
+#      uri:
+#        url: "{{ technitium_api }}/apps/downloadAndInstall"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Query Logs (PostgreSQL)"
+#          url: "https://download.technitium.com/dns/apps/QueryLogsPostgreSqlApp-v1.2.1.zip"
+#        status_code: 200
+#
+#    - name: Configure Query Logs (PostgreSQL) app
+#      uri:
+#        url: "{{ technitium_api }}/apps/config/set"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Query Logs (PostgreSQL)"
+#          config: |
+#            {
+#              "enableLogging": true,
+#              "maxQueueSize": 1000000,
+#              "maxLogDays": 30,
+#              "maxLogRecords": 0,
+#              "databaseName": "DnsQueryLogs",
+#              "connectionString": "Server=127.0.0.1; Port=5432; Username=technitium; Password={{ querylogs_pg_password }};"
+#            }
+#        status_code: 200
+#      no_log: true

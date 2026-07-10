@@ -247,6 +247,11 @@
         name: dns.service
         state: restarted
 
+    # For optional DNS Apps (Advanced Blocking, Failover, Auto PTR, Log
+    # Exporter, Query Logs backends, Weighted Round Robin, ...) see the
+    # commented-out scaffold in configure-technitium-apps.yaml -- not run
+    # here by default.
+
     - name: Confirm configuration applied
       debug:
         msg: "Technitium DNS Server fully configured with a fresh API key, TSIG keys, Bitwarden secrets, and GitOps automation."
