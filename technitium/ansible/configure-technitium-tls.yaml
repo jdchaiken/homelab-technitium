@@ -15,10 +15,22 @@
     # Persistent, cross-rebuild storage for the Let's Encrypt cert/key/
     # renewal state, so it survives the fact that every rebuild is a brand
     # new, ephemeral VM. See task 4 below.
-    nfs_server: "nas01.storage.example.com"
-    nfs_export_path: "/mnt/tank/files/config/technitium"
-    nfs_mount_point: "/mnt/technitium-certs"
-    letsencrypt_config_dir: "{{ nfs_mount_point }}/letsencrypt"
+    #
+    # nas01.example.com (NOT nas01.storage.example.com) is deliberate:
+    # the "storage" subdomain is the NAS's dedicated 10GbE iSCSI interface
+    # (used for Proxmox's itank block storage), which is a different,
+    # likely isolated network from this VM's subnet. nas01.example.com is
+    # the NAS's general-purpose LAN interface, on the same subnet as this
+    # VM -- the correct one for NFS.
+    #
+    # The actual export is the parent /mnt/tank/files/config, not a
+    # technitium-specific export -- this playbook mounts that and creates
+    # its own "technitium" subdirectory within it (task 4), rather than
+    # assuming a technitium subdirectory already exists on the NAS.
+    nfs_server: "nas01.example.com"
+    nfs_export_path: "/mnt/tank/files/config"
+    nfs_mount_point: "/mnt/technitium-share"
+    letsencrypt_config_dir: "{{ nfs_mount_point }}/technitium/letsencrypt"
     web_console_http_port: 80
     web_console_tls_port: 8443
 
@@ -103,7 +115,10 @@
     # on every rebuild -- no copy/relay step needed. This export is managed
     # outside this repo (same as the Cloudflare zone) -- it must already
     # exist on the NAS, reachable from this VM's subnet, with permissions
-    # that allow root (this playbook runs as root) to read/write.
+    # that allow root (this playbook runs as root) to read/write. The
+    # export itself is the shared parent /mnt/tank/files/config, not
+    # technitium-specific, so this creates its own "technitium"
+    # subdirectory inside it rather than assuming one already exists.
     ###########################################################################
     - name: Install NFS client
       apt:
@@ -127,6 +142,12 @@
         fstype: nfs
         opts: rw,hard,intr
         state: mounted
+
+    - name: Create technitium subdirectory on the share
+      file:
+        path: "{{ nfs_mount_point }}/technitium"
+        state: directory
+        mode: "0700"
 
     ###########################################################################
     # 5. ISSUE LET'S ENCRYPT CERTIFICATE (DNS-01 via Cloudflare)

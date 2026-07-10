@@ -54,13 +54,18 @@ carried over. Without this, each rebuild would issue a brand-new
 certificate via Cloudflare DNS-01, burning API calls and Let's Encrypt's
 rate limit even when the existing cert has months left.
 
-    Server:      nas01.storage.example.com (172.16.70.241)
-    Export path: /mnt/tank/files/config/technitium
-    Mounted at:  /mnt/technitium-certs (on the guest, via NFS)
+    Server:      nas01.example.com (172.16.100.241 -- the NAS's general
+                 LAN interface, NOT nas01.storage.example.com, which is
+                 its dedicated 10GbE iSCSI interface for Proxmox's itank
+                 storage, a different network from this VM's subnet)
+    Export path: /mnt/tank/files/config (shared parent export; Ansible
+                 creates its own "technitium" subdirectory inside it)
+    Mounted at:  /mnt/technitium-share (on the guest, via NFS)
 
-`technitium/ansible/configure-technitium-tls.yaml` mounts this share and
-points certbot's `--config-dir` at it directly — the cert/key/renewal
-state simply already exists there on every rebuild, no copy step needed.
+`technitium/ansible/configure-technitium-tls.yaml` mounts this share,
+creates a `technitium/` subdirectory in it, and points certbot's
+`--config-dir` there directly — the cert/key/renewal state simply already
+exists on every rebuild, no copy step needed.
 
 This export is managed on the NAS, outside this repo (same as the
 Cloudflare zone itself). It must exist, be reachable from the VM's subnet
