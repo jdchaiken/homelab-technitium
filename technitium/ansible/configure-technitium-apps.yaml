@@ -1,4 +1,5 @@
-# Optional Technitium DNS Apps -- commented-out scaffold, not run by anything.
+# Optional Technitium DNS Apps + SSO -- commented-out scaffold, not run by
+# anything.
 #
 # Everything below is disabled. To use it:
 #   1. Uncomment the app(s) you want (strip the leading "#" from each line,
@@ -23,14 +24,22 @@
 # patterns are reused here.
 #
 # Secrets used below, and the bw.env keys they read (add these to bw.env
-# only for the apps you actually enable):
+# only for the feature(s) you actually enable):
 #   TECHNITIUM_QUERYLOGS_PG_PASSWORD   -- Query Logs (PostgreSQL) DB password
 #   TECHNITIUM_FAILOVER_SMTP_PASSWORD  -- Failover app's SMTP alert password
 #   TECHNITIUM_LOGEXPORTER_HTTP_TOKEN  -- Log Exporter's HTTP sink auth token
+#   TECHNITIUM_SSO_CONFIG              -- single JSON secret for SSO, see the
+#                                          SSO section below for its shape
 #
 # Auto PTR and Weighted Round Robin need no config at all (confirmed live:
 # GET config returns "#This app requires no config."). Advanced Blocking's
 # example config below has no secrets, just block list URLs.
+#
+# SSO is a core Administration feature, not a DNS App -- no install step,
+# just a config call. Its four values (authority, client ID, client secret,
+# group map) come from ONE JSON-encoded bw.env secret instead of four
+# separate keys, to keep this down to a single secret lookup -- see the SSO
+# section below for the exact bw.env line shape.
 #
 #---
 #- name: Configure optional Technitium DNS Apps
@@ -329,5 +338,54 @@
 #              "databaseName": "DnsQueryLogs",
 #              "connectionString": "Server=127.0.0.1; Port=5432; Username=technitium; Password={{ querylogs_pg_password }};"
 #            }
+#        status_code: 200
+#      no_log: true
+#
+#    ###########################################################################
+#    # SSO (OpenID Connect) -- this is a core Administration feature, not a
+#    # DNS App, so there's no install step: just POST to /api/admin/sso/set.
+#    # Works with any standard OIDC provider (Authentik, Okta, Entra ID,
+#    # Keycloak, ...). Verified live against a running instance via the
+#    # read-only Get SSO Config call; ssoGroupMap's exact pipe-delimited
+#    # shape below follows the same flat "row1key|row1value|row2key|row2value"
+#    # convention already confirmed for tsigKeys in configure-technitium.yaml,
+#    # but wasn't independently write-tested here -- double check it against
+#    # the web console (Administration > SSO) before relying on it.
+#    #
+#    # Unlike the apps above, all four SSO values (authority, client ID,
+#    # client secret, group map) live in ONE JSON-encoded bw.env secret
+#    # instead of four separate keys -- one regex_search + from_json instead
+#    # of four, and the shape mirrors what you'd get back from a single
+#    # Bitwarden secret if this ever moves to fetching secrets individually
+#    # via the bws API instead of the pre-staged bw.env file. The value is
+#    # NOT wrapped in quotes in bw.env (unlike the other keys above) --
+#    # capturing to end-of-line sidesteps having to escape quote characters
+#    # that appear inside the JSON itself or inside the client secret.
+#    #
+#    # bw.env line (single line, no surrounding quotes -- this example is
+#    # split across two lines here only because it's a comment):
+#    #   TECHNITIUM_SSO_CONFIG={"authority":"https://sso.example.com/app/o/technitium/",
+#    #   "clientId":"your-client-id","clientSecret":"your-client-secret","groupMap":"idp-admins|Administrators"}
+#    ###########################################################################
+#    - name: Parse SSO config secret (single JSON secret, keys extracted from it)
+#      set_fact:
+#        technitium_sso: "{{ (bw_env_raw | regex_search('TECHNITIUM_SSO_CONFIG=(.+)', '\\1') | first) | from_json }}"
+#      no_log: true
+#
+#    - name: Configure Technitium SSO (OpenID Connect)
+#      uri:
+#        url: "{{ technitium_api }}/admin/sso/set"
+#        method: POST
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          ssoEnabled: true
+#          ssoAuthority: "{{ technitium_sso.authority }}"
+#          ssoClientId: "{{ technitium_sso.clientId }}"
+#          ssoClientSecret: "{{ technitium_sso.clientSecret }}"
+#          ssoAllowSignup: true
+#          ssoAllowSignupOnlyForMappedUsers: true
+#          ssoGroupMap: "{{ technitium_sso.groupMap }}"
 #        status_code: 200
 #      no_log: true
