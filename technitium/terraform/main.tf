@@ -239,8 +239,12 @@ resource "null_resource" "cutover" {
     command = <<-EOT
       set -e
 
+      %{if var.old_vm_id != null~}
       echo "Stopping old VM ${var.old_vm_id}..."
       ssh root@${var.pm_node} "qm stop ${var.old_vm_id}"
+      %{else~}
+      echo "old_vm_id is unset -- no previous VM to stop (first build or post-destroy rebuild)."
+      %{endif~}
 
       PROD_IP="$(echo "${var.prod_vm_ip}" | cut -d'/' -f1)"
       CIDR="$(echo "${var.prod_vm_ip}" | cut -d'/' -f2)"
@@ -262,6 +266,10 @@ resource "null_resource" "cutover" {
 ###############################################################################
 
 resource "null_resource" "destroy_old" {
+  # Don't create this resource at all when there's no old VM to destroy
+  # (first build, or a rebuild right after `terraform destroy`).
+  count = var.old_vm_id != null ? 1 : 0
+
   triggers = {
     vm_instance_id = proxmox_virtual_environment_vm.technitium_temp.id
   }

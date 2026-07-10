@@ -98,7 +98,13 @@ variable "ssh_privkey" {
 ###############################################################################
 variable "old_vm_id" {
   type        = number
-  description = "VMID of old Technitium VM"
+  default     = null
+  description = <<-EOT
+    VMID of the old Technitium VM to destroy after cutover. Leave unset
+    (null) when there's no previous VM to replace -- e.g. the first build,
+    or a rebuild right after `terraform destroy`. Cutover skips stopping
+    it and destroy_old doesn't run at all in that case.
+  EOT
 }
 
 ###############################################################################
