@@ -45,6 +45,33 @@ Cloud-init copies this file into the VM.
 
 ---
 
+## Persistent Certificate Storage (NFS)
+
+The Let's Encrypt certificate for the DNS server (`ns1.example.com`) —
+key material, renewal state, and ACME account — is persisted outside the
+VM, since every rebuild is a fresh, ephemeral instance with nothing else
+carried over. Without this, each rebuild would issue a brand-new
+certificate via Cloudflare DNS-01, burning API calls and Let's Encrypt's
+rate limit even when the existing cert has months left.
+
+    Server:      nas01.storage.example.com (172.16.70.241)
+    Export path: /mnt/tank/files/config/technitium
+    Mounted at:  /mnt/technitium-certs (on the guest, via NFS)
+
+`technitium/ansible/configure-technitium-tls.yaml` mounts this share and
+points certbot's `--config-dir` at it directly — the cert/key/renewal
+state simply already exists there on every rebuild, no copy step needed.
+
+This export is managed on the NAS, outside this repo (same as the
+Cloudflare zone itself). It must exist, be reachable from the VM's subnet
+(172.16.100.0/24), and allow root read/write (certbot runs as root) —
+i.e. `no_root_squash` or equivalent permissive mapping for this export.
+It holds a TLS private key, so treat it with the same care as `bw.env`:
+restrict the export's client ACL to only the addresses that need it
+rather than the whole network.
+
+---
+
 ## Files in This Directory
 
 ### bw.env.sample

@@ -12,6 +12,15 @@
     pfx_path: "/etc/dns/{{ tls_domain }}.pfx"
     pfx_pass_file: "/etc/dns/.pfx_pass"
     cloudflare_credentials_path: "/etc/letsencrypt/cloudflare/credentials.ini"
+    # Persistent, cross-rebuild storage for the Let's Encrypt cert/key/
+    # renewal state, so it survives the fact that every rebuild is a brand
+    # new, ephemeral VM. See task 4 below.
+    nfs_server: "nas01.storage.example.com"
+    nfs_export_path: "/mnt/tank/files/config/technitium"
+    nfs_mount_point: "/mnt/technitium-certs"
+    letsencrypt_config_dir: "{{ nfs_mount_point }}/letsencrypt"
+    web_console_http_port: 80
+    web_console_tls_port: 8443
 
   tasks:
     ###########################################################################
@@ -54,6 +63,25 @@
         state: present
         update_cache: true
 
+    # Confirmed live: without this, the settings/set call in task 9 fails
+    # its internal QUIC-support validation, because dns.service is still
+    # the process that started before libmsquic was installed -- native
+    # libraries like this are only loaded at process start, so the running
+    # process doesn't see it until restarted, even though the package is
+    # genuinely on disk by this point. On the first automated rebuild this
+    # silently broke DoT/DoH/DoH3/DoQ entirely: settings/set is one API
+    # call, Technitium stops processing remaining fields after the first
+    # one that throws, and dnsTlsCertificatePath happened to come after
+    # the DoH3/QUIC fields in its own processing order -- so the DNS TLS
+    # cert path never got set either, even though it has nothing to do
+    # with QUIC. This restart must happen before task 9, not just at the
+    # end (task 10 still restarts again afterward, for a different reason:
+    # binding the listeners once the cert path is actually set).
+    - name: Restart Technitium DNS service to load the newly installed libmsquic
+      systemd:
+        name: dns.service
+        state: restarted
+
     ###########################################################################
     # 3. INSTALL CERTBOT + CLOUDFLARE DNS PLUGIN
     ###########################################################################
@@ -65,11 +93,54 @@
         state: present
 
     ###########################################################################
-    # 4. ISSUE LET'S ENCRYPT CERTIFICATE (DNS-01 via Cloudflare)
-    # `creates` makes this idempotent -- on a fresh VM the cert doesn't exist
-    # yet so this runs; re-running this playbook against an already-issued
-    # instance skips it (renewal is handled separately by certbot's own
-    # timer + the deploy hook installed below, not by re-running this task).
+    # 4. MOUNT PERSISTENT CERTIFICATE STORAGE (NFS)
+    # Each rebuild is a brand new, ephemeral VM -- without this, certbot
+    # would issue a fresh Let's Encrypt certificate via Cloudflare DNS-01 on
+    # every single rebuild, burning API calls and eating into LE's rate
+    # limit even when the existing cert has months of validity left.
+    # Mounting this share and pointing certbot's --config-dir at it (task 5)
+    # means the exact same cert/key/renewal state is simply already there
+    # on every rebuild -- no copy/relay step needed. This export is managed
+    # outside this repo (same as the Cloudflare zone) -- it must already
+    # exist on the NAS, reachable from this VM's subnet, with permissions
+    # that allow root (this playbook runs as root) to read/write.
+    ###########################################################################
+    - name: Install NFS client
+      apt:
+        name: nfs-common
+        state: present
+
+    - name: Create NFS mount point
+      file:
+        path: "{{ nfs_mount_point }}"
+        state: directory
+        mode: "0700"
+
+    - name: Mount persistent certificate storage
+      # FQCN deliberately, not the bare "mount" -- this resolves to
+      # ansible.posix.mount (a collection module, not ansible.builtin),
+      # which the Debian "ansible" metapackage bundles but isn't
+      # necessarily present under every possible Ansible install method.
+      ansible.posix.mount:
+        path: "{{ nfs_mount_point }}"
+        src: "{{ nfs_server }}:{{ nfs_export_path }}"
+        fstype: nfs
+        opts: rw,hard,intr
+        state: mounted
+
+    ###########################################################################
+    # 5. ISSUE LET'S ENCRYPT CERTIFICATE (DNS-01 via Cloudflare)
+    # --config-dir points certbot at the NFS mount above instead of the
+    # default /etc/letsencrypt, so live/, archive/, renewal/, and accounts/
+    # all persist across rebuilds. --keep-until-expiring makes this safe to
+    # run unconditionally on every deploy: certbot checks the existing
+    # cert's own validity and only calls out to Cloudflare/LE if it's
+    # actually within its renewal window, otherwise this is a no-op -- zero
+    # API calls on the common case, which is the actual point of this
+    # change. (Deliberately no `creates:` gate here anymore -- with the
+    # cert now durably present on every rebuild rather than only
+    # "sometimes restored", a file-existence gate would make this skip
+    # forever, including once the cert is actually expired.)
     ###########################################################################
     - name: Ensure Cloudflare credentials directory exists
       file:
@@ -87,16 +158,16 @@
     - name: Issue Let's Encrypt certificate for {{ tls_domain }}
       command: >
         certbot certonly
+        --config-dir {{ letsencrypt_config_dir }}
         --dns-cloudflare
         --dns-cloudflare-credentials {{ cloudflare_credentials_path }}
         --dns-cloudflare-propagation-seconds 30
         -d {{ tls_domain }}
         --non-interactive --agree-tos --email admin@example.com --no-eff-email
-      args:
-        creates: "/etc/letsencrypt/live/{{ tls_domain }}/fullchain.pem"
+        --keep-until-expiring
 
     ###########################################################################
-    # 5. CONVERT TO PKCS#12 (.pfx) -- Technitium needs a .pfx with private
+    # 6. CONVERT TO PKCS#12 (.pfx) -- Technitium needs a .pfx with private
     # key, not separate PEM files. Password is fresh per VM (blue/green
     # rebuilds always get a brand new instance, so there's no need for
     # cross-VM consistency) and persisted locally only for the renewal hook
@@ -118,8 +189,8 @@
       command: >
         openssl pkcs12 -export
         -out {{ pfx_path }}
-        -inkey /etc/letsencrypt/live/{{ tls_domain }}/privkey.pem
-        -in /etc/letsencrypt/live/{{ tls_domain }}/fullchain.pem
+        -inkey {{ letsencrypt_config_dir }}/live/{{ tls_domain }}/privkey.pem
+        -in {{ letsencrypt_config_dir }}/live/{{ tls_domain }}/fullchain.pem
         -password pass:{{ pfx_password }}
       no_log: true
 
@@ -131,20 +202,29 @@
         mode: "0600"
 
     ###########################################################################
-    # 6. RENEWAL HOOK -- regenerate the PFX and reload Technitium whenever
-    # certbot renews the underlying cert. Certbot runs everything in
-    # /etc/letsencrypt/renewal-hooks/deploy/ automatically after a
-    # successful renewal; no separate registration needed.
+    # 7. RENEWAL HOOK -- regenerate the PFX and reload Technitium whenever
+    # certbot renews the underlying cert. Certbot resolves renewal-hooks
+    # relative to whichever --config-dir is in effect for a given
+    # invocation, so this lives under the NFS-mounted config dir (task 5
+    # uses --config-dir explicitly) rather than the default
+    # /etc/letsencrypt/renewal-hooks/deploy/. Note: this hook only fires
+    # for renewals triggered through this playbook's own certbot call
+    # (task 5, which runs on every rebuild) -- the system-wide
+    # certbot.timer runs `certbot renew` against the *default* config dir,
+    # which has nothing in it now that everything points at the NFS
+    # mount, so it will find nothing to renew. Cadence between rebuilds
+    # relies on rebuilds happening at least roughly as often as the
+    # renewal window (~30 days out from a 90-day cert).
     ###########################################################################
     - name: Ensure certbot renewal-hooks/deploy directory exists
       file:
-        path: /etc/letsencrypt/renewal-hooks/deploy
+        path: "{{ letsencrypt_config_dir }}/renewal-hooks/deploy"
         state: directory
         mode: "0755"
 
     - name: Install the PFX regeneration renewal hook
       copy:
-        dest: /etc/letsencrypt/renewal-hooks/deploy/technitium-pfx.sh
+        dest: "{{ letsencrypt_config_dir }}/renewal-hooks/deploy/technitium-pfx.sh"
         mode: "0700"
         content: |
           #!/usr/bin/env bash
@@ -152,15 +232,15 @@
           PFX_PASS=$(cat {{ pfx_pass_file }})
           openssl pkcs12 -export \
             -out {{ pfx_path }} \
-            -inkey /etc/letsencrypt/live/{{ tls_domain }}/privkey.pem \
-            -in /etc/letsencrypt/live/{{ tls_domain }}/fullchain.pem \
+            -inkey {{ letsencrypt_config_dir }}/live/{{ tls_domain }}/privkey.pem \
+            -in {{ letsencrypt_config_dir }}/live/{{ tls_domain }}/fullchain.pem \
             -password pass:"$PFX_PASS"
           chmod 600 {{ pfx_path }}
           chown dns-server:dns-server {{ pfx_path }}
           systemctl restart dns.service
 
     ###########################################################################
-    # 7. LOG IN TO TECHNITIUM
+    # 8. LOG IN TO TECHNITIUM
     ###########################################################################
     - name: Login to Technitium
       uri:
@@ -180,8 +260,12 @@
       no_log: true
 
     ###########################################################################
-    # 8. CONFIGURE TLS + ENABLE DNS-over-TLS/HTTPS/HTTP3/QUIC
-    # Field names verified live against a running 15.3 instance.
+    # 9. CONFIGURE TLS + ENABLE DNS-over-TLS/HTTPS/HTTP3/QUIC + WEB CONSOLE
+    # PORTS. Field names verified live against a running 15.3 instance.
+    # Port 443 is taken by DNS-over-HTTPS, so the web console moves to
+    # web_console_tls_port; web_console_http_port stays open purely as an
+    # HTTP->HTTPS redirect source (webServiceHttpToTlsRedirect), never
+    # serving the login form itself over plaintext.
     ###########################################################################
     - name: Configure TLS certificate and enable secure DNS transports
       uri:
@@ -200,11 +284,14 @@
           webServiceEnableTls: true
           webServiceTlsCertificatePath: "{{ pfx_path }}"
           webServiceTlsCertificatePassword: "{{ pfx_password }}"
+          webServiceHttpPort: "{{ web_console_http_port }}"
+          webServiceTlsPort: "{{ web_console_tls_port }}"
+          webServiceHttpToTlsRedirect: true
         status_code: 200
       no_log: true
 
     ###########################################################################
-    # 9. RESTART -- confirmed live: the TLS/QUIC listeners only bind at
+    # 10. RESTART -- confirmed live: the TLS/QUIC listeners only bind at
     # service start. Enabling the flags via settings/set alone does not open
     # the ports until dns.service restarts and re-reads the config.
     ###########################################################################
