@@ -158,6 +158,9 @@ lint: ## Run all linters (shell, YAML, Terraform)
 
 		@echo "$(GREEN)Lint complete.$(RESET)"
 
+update-zones: validate-zones ## Update DNS Zone SOA
+	@echo "$(BLUE)Updating Zone SOA$(RESET)"
+	@cd dns && ./scripts/update-serials.sh
 
 bootstrap:
 		ansible-playbook -i ansible/inventory/technitium.ini ansible/technitium-bootstrap.yaml
@@ -167,4 +170,4 @@ bootstrap:
 ###############################################################################
 .PHONY: install configure rebuild validate-zones pull sync-snippets deploy \
 		verify-dev install-dev scan-secrets verify-secrets lint help \
-		install-hooks test-hooks verify-hooks
+		install-hooks test-hooks verify-hooks update-zones

@@ -1,6 +1,6 @@
 $TTL 300
 @       IN SOA  ns1.example.com. admin.example.com. (
-            2024070601 ; serial
+            2026071003 ; serial
             3600
             1800
             604800
@@ -14,6 +14,7 @@ ns1     IN A    172.16.100.6
 ldap    IN A    10.30.0.3
 git     IN A    10.30.0.4
 alloy   IN A    10.30.0.10
+nas01   IN A    172.16.100.241
 
 ; --- ExternalDNS will dynamically manage Gateway API hostnames ---
 ; DO NOT manually define:
