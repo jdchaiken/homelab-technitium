@@ -64,7 +64,7 @@ variable "prod_vm_ip" {
 
 variable "prod_vm_name" {
   type        = string
-  default     = "technitium"
+  default     = "ns1"
   description = "Name the VM is renamed to (via `qm set --name`) once cutover completes"
 }
 

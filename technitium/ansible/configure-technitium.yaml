@@ -169,6 +169,7 @@
           Authorization: "Bearer {{ technitium_api_key }}"
         body_format: form-urlencoded
         body:
+          dnsServerDomain: "ns1.example.com"
           forwarders: "{{ upstream_resolver_ip }}"
           dnssecValidation: true
           recursion: "UseSpecifiedNetworkACL"
