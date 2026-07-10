@@ -54,9 +54,22 @@ pull: ## Pull latest infra repo changes
 		cd $(REPO_DIR) && git pull --rebase
 
 ###############################################################################
+# Sync Cloud-Init Snippet
+#
+# tank is NFS, shared cluster-wide, so one copy from any node reaches all of
+# them. This snippet is NOT tracked/synced by Terraform itself -- without
+# this step, `deploy` would silently run against whatever stale copy is
+# already sitting in Proxmox storage, no matter what's committed to git.
+###############################################################################
+sync-snippets: ## Sync the cloud-init snippet to Proxmox shared storage
+		@PM_NODE=$$(grep '^pm_node' technitium/terraform/local/terraform.tfvars | sed -E 's/.*"([^"]+)".*/\1/'); \
+		echo "$(BLUE)Syncing technitium-user.yaml to $$PM_NODE:/mnt/pve/tank/snippets/...$(RESET)"; \
+		scp technitium/cloud-init/technitium-user.yaml root@$$PM_NODE:/mnt/pve/tank/snippets/technitium-user.yaml
+
+###############################################################################
 # Terraform Deployment (Full GitOps Flow)
 ###############################################################################
-deploy: ## Deploy Technitium DNS via Terraform (VM create, cloud-init runs Ansible, DNS cutover — all handled by Terraform)
+deploy: sync-snippets ## Deploy Technitium DNS via Terraform (VM create, Ansible via Terraform remote-exec, DNS cutover — all handled by Terraform)
 		cd technitium/terraform && terraform init && terraform apply -auto-approve -var-file=local/terraform.tfvars
 
 		@echo "$(BLUE)Confirming DNS on production IP...$(RESET)"
@@ -152,6 +165,6 @@ bootstrap:
 ###############################################################################
 # Phony Targets
 ###############################################################################
-.PHONY: install configure rebuild validate-zones pull deploy \
+.PHONY: install configure rebuild validate-zones pull sync-snippets deploy \
 		verify-dev install-dev scan-secrets verify-secrets lint help \
 		install-hooks test-hooks verify-hooks
