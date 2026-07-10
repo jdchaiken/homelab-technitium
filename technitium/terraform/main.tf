@@ -184,6 +184,7 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
       "chmod 600 /root/bw.env",
       "ansible-playbook /opt/infra/technitium/technitium/ansible/install-technitium.yaml",
       "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium.yaml",
+      "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium-tls.yaml",
     ]
   }
 }

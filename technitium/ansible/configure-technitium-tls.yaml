@@ -1,0 +1,218 @@
+---
+- name: Configure Technitium TLS (DNS-over-TLS/HTTPS/HTTP3/QUIC) via Let's Encrypt
+  hosts: localhost
+  become: true
+  gather_facts: false
+
+  vars:
+    technitium_url: "http://localhost:5380"
+    technitium_api: "{{ technitium_url }}/api"
+    technitium_admin_user: "admin"
+    tls_domain: "ns1.example.com"
+    pfx_path: "/etc/dns/{{ tls_domain }}.pfx"
+    pfx_pass_file: "/etc/dns/.pfx_pass"
+    cloudflare_credentials_path: "/etc/letsencrypt/cloudflare/credentials.ini"
+
+  tasks:
+    ###########################################################################
+    # 1. LOAD SECRETS
+    # Same bw.env file and pattern as configure-technitium.yaml. This
+    # playbook runs after that one (Terraform's remote-exec), so the admin
+    # password has already been changed from the default -- log in with the
+    # real one, not "admin".
+    ###########################################################################
+    - name: Read Bitwarden environment file
+      set_fact:
+        bw_env_raw: "{{ lookup('file', '/root/bw.env') }}"
+      no_log: true
+
+    - name: Parse secrets needed for TLS setup
+      set_fact:
+        technitium_admin_password: "{{ bw_env_raw | regex_search('TECHNITIUM_ADMIN_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+        cloudflare_api_token: "{{ bw_env_raw | regex_search('CLOUDFLARE_API_TOKEN=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+      no_log: true
+
+    ###########################################################################
+    # 2. INSTALL libmsquic (required for DNS-over-HTTP/3 and DNS-over-QUIC)
+    # Not in Debian's default repos -- comes from Microsoft's own repo.
+    # Verified live on Debian 13 (trixie): packages.microsoft.com publishes a
+    # trixie-specific repo config.
+    ###########################################################################
+    - name: Download Microsoft package repo config
+      get_url:
+        url: "https://packages.microsoft.com/config/debian/13/packages-microsoft-prod.deb"
+        dest: /tmp/packages-microsoft-prod.deb
+        mode: "0644"
+
+    - name: Install Microsoft package repo config
+      apt:
+        deb: /tmp/packages-microsoft-prod.deb
+
+    - name: Install libmsquic
+      apt:
+        name: libmsquic
+        state: present
+        update_cache: true
+
+    ###########################################################################
+    # 3. INSTALL CERTBOT + CLOUDFLARE DNS PLUGIN
+    ###########################################################################
+    - name: Install certbot and the Cloudflare DNS plugin
+      apt:
+        name:
+          - certbot
+          - python3-certbot-dns-cloudflare
+        state: present
+
+    ###########################################################################
+    # 4. ISSUE LET'S ENCRYPT CERTIFICATE (DNS-01 via Cloudflare)
+    # `creates` makes this idempotent -- on a fresh VM the cert doesn't exist
+    # yet so this runs; re-running this playbook against an already-issued
+    # instance skips it (renewal is handled separately by certbot's own
+    # timer + the deploy hook installed below, not by re-running this task).
+    ###########################################################################
+    - name: Ensure Cloudflare credentials directory exists
+      file:
+        path: /etc/letsencrypt/cloudflare
+        state: directory
+        mode: "0700"
+
+    - name: Write Cloudflare API token credentials file
+      copy:
+        dest: "{{ cloudflare_credentials_path }}"
+        content: "dns_cloudflare_api_token = {{ cloudflare_api_token }}\n"
+        mode: "0600"
+      no_log: true
+
+    - name: Issue Let's Encrypt certificate for {{ tls_domain }}
+      command: >
+        certbot certonly
+        --dns-cloudflare
+        --dns-cloudflare-credentials {{ cloudflare_credentials_path }}
+        --dns-cloudflare-propagation-seconds 30
+        -d {{ tls_domain }}
+        --non-interactive --agree-tos --email admin@example.com --no-eff-email
+      args:
+        creates: "/etc/letsencrypt/live/{{ tls_domain }}/fullchain.pem"
+
+    ###########################################################################
+    # 5. CONVERT TO PKCS#12 (.pfx) -- Technitium needs a .pfx with private
+    # key, not separate PEM files. Password is fresh per VM (blue/green
+    # rebuilds always get a brand new instance, so there's no need for
+    # cross-VM consistency) and persisted locally only for the renewal hook
+    # to reuse.
+    ###########################################################################
+    - name: Generate PFX password
+      set_fact:
+        pfx_password: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}"
+      no_log: true
+
+    - name: Save PFX password for the renewal hook to reuse
+      copy:
+        dest: "{{ pfx_pass_file }}"
+        content: "{{ pfx_password }}"
+        mode: "0600"
+      no_log: true
+
+    - name: Export certificate + key to PKCS#12
+      command: >
+        openssl pkcs12 -export
+        -out {{ pfx_path }}
+        -inkey /etc/letsencrypt/live/{{ tls_domain }}/privkey.pem
+        -in /etc/letsencrypt/live/{{ tls_domain }}/fullchain.pem
+        -password pass:{{ pfx_password }}
+      no_log: true
+
+    - name: Set ownership/permissions on the PFX file
+      file:
+        path: "{{ pfx_path }}"
+        owner: dns-server
+        group: dns-server
+        mode: "0600"
+
+    ###########################################################################
+    # 6. RENEWAL HOOK -- regenerate the PFX and reload Technitium whenever
+    # certbot renews the underlying cert. Certbot runs everything in
+    # /etc/letsencrypt/renewal-hooks/deploy/ automatically after a
+    # successful renewal; no separate registration needed.
+    ###########################################################################
+    - name: Ensure certbot renewal-hooks/deploy directory exists
+      file:
+        path: /etc/letsencrypt/renewal-hooks/deploy
+        state: directory
+        mode: "0755"
+
+    - name: Install the PFX regeneration renewal hook
+      copy:
+        dest: /etc/letsencrypt/renewal-hooks/deploy/technitium-pfx.sh
+        mode: "0700"
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          PFX_PASS=$(cat {{ pfx_pass_file }})
+          openssl pkcs12 -export \
+            -out {{ pfx_path }} \
+            -inkey /etc/letsencrypt/live/{{ tls_domain }}/privkey.pem \
+            -in /etc/letsencrypt/live/{{ tls_domain }}/fullchain.pem \
+            -password pass:"$PFX_PASS"
+          chmod 600 {{ pfx_path }}
+          chown dns-server:dns-server {{ pfx_path }}
+          systemctl restart dns.service
+
+    ###########################################################################
+    # 7. LOG IN TO TECHNITIUM
+    ###########################################################################
+    - name: Login to Technitium
+      uri:
+        url: "{{ technitium_api }}/user/login"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          user: "{{ technitium_admin_user }}"
+          pass: "{{ technitium_admin_password }}"
+        status_code: 200
+      register: tls_login
+      no_log: true
+
+    - name: Extract session token
+      set_fact:
+        technitium_session_token: "{{ tls_login.json.token }}"
+      no_log: true
+
+    ###########################################################################
+    # 8. CONFIGURE TLS + ENABLE DNS-over-TLS/HTTPS/HTTP3/QUIC
+    # Field names verified live against a running 15.3 instance.
+    ###########################################################################
+    - name: Configure TLS certificate and enable secure DNS transports
+      uri:
+        url: "{{ technitium_api }}/settings/set"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ technitium_session_token }}"
+        body_format: form-urlencoded
+        body:
+          dnsTlsCertificatePath: "{{ pfx_path }}"
+          dnsTlsCertificatePassword: "{{ pfx_password }}"
+          enableDnsOverTls: true
+          enableDnsOverHttps: true
+          enableDnsOverHttp3: true
+          enableDnsOverQuic: true
+          webServiceEnableTls: true
+          webServiceTlsCertificatePath: "{{ pfx_path }}"
+          webServiceTlsCertificatePassword: "{{ pfx_password }}"
+        status_code: 200
+      no_log: true
+
+    ###########################################################################
+    # 9. RESTART -- confirmed live: the TLS/QUIC listeners only bind at
+    # service start. Enabling the flags via settings/set alone does not open
+    # the ports until dns.service restarts and re-reads the config.
+    ###########################################################################
+    - name: Restart Technitium DNS service to bind new listeners
+      systemd:
+        name: dns.service
+        state: restarted
+
+    - name: Confirm TLS configuration applied
+      debug:
+        msg: "Technitium TLS configured for {{ tls_domain }}: DoT/DoH/DoH3/DoQ enabled."
