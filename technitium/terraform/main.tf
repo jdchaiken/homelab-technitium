@@ -67,6 +67,14 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
 
   lifecycle {
     replace_triggered_by = [terraform_data.rebuild_trigger]
+    # Without this, Terraform's default replace order is destroy-then-
+    # create: bumping rebuild_id would destroy the CURRENT production VM
+    # first and only then start building its replacement, taking DNS down
+    # for the entire ~10+ minute build+configure window instead of just the
+    # brief cutover reboot. create_before_destroy builds and fully
+    # configures the new VM first; the old instance is only torn down once
+    # every dependent (wait_for_dns, cutover) has completed.
+    create_before_destroy = true
     ignore_changes = [
       # vm_id comes from data.external.vmid, which re-runs next-vmid.sh on
       # every plan/apply and can return a different value each time (e.g.
@@ -207,7 +215,7 @@ resource "null_resource" "wait_for_dns" {
       set -e
 
       VM_IP="$(echo "${var.temp_vm_ip}" | cut -d'/' -f1)"
-      HOSTNAME="technitium.example.com"
+      HOSTNAME="ns1.example.com"
 
       echo "Waiting for DNS on $VM_IP..."
 
@@ -236,6 +244,15 @@ resource "null_resource" "cutover" {
 
   depends_on = [null_resource.wait_for_dns]
 
+  # Stopping the old VM here (rather than leaving it to Terraform's own
+  # create_before_destroy teardown) is required, not optional: that native
+  # teardown only happens after every dependent of this resource finishes,
+  # which is too late -- the old VM would still be holding prod_vm_ip when
+  # this script tries to hand that IP to the new one. There is no separate
+  # "destroy old VM" resource anymore: once create_before_destroy is set on
+  # technitium_temp, Terraform destroys the old instance natively as the
+  # last step of the replace, once this resource (and wait_for_dns) have
+  # completed -- a hand-rolled `qm destroy` here would just race it.
   provisioner "local-exec" {
     command = <<-EOT
       set -e
@@ -258,30 +275,6 @@ resource "null_resource" "cutover" {
 
       echo "Rebooting new VM ${local.new_vmid}..."
       ssh root@${var.pm_node} "qm reboot ${local.new_vmid}"
-    EOT
-  }
-}
-
-###############################################################################
-# Destroy Old VM After Successful Cutover
-###############################################################################
-
-resource "null_resource" "destroy_old" {
-  # Don't create this resource at all when there's no old VM to destroy
-  # (first build, or a rebuild right after `terraform destroy`).
-  count = var.old_vm_id != null ? 1 : 0
-
-  triggers = {
-    vm_instance_id = proxmox_virtual_environment_vm.technitium_temp.id
-  }
-
-  depends_on = [null_resource.cutover]
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      echo "Destroying old VM ${var.old_vm_id}..."
-      ssh root@${var.pm_node} "qm destroy ${var.old_vm_id}"
     EOT
   }
 }
