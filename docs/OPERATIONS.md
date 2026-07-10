@@ -36,7 +36,10 @@ force-replace or revert the running server. To actually rebuild:
     # 2. Confirm old_vm_id in the same file matches the CURRENT production
     #    VMID (check with `terraform output new_vmid` after the last
     #    successful deploy) -- this is the VM that gets destroyed after
-    #    cutover.
+    #    cutover. Leave old_vm_id unset/commented out if there's no
+    #    previous VM to replace (first build, or right after a
+    #    `terraform destroy`) -- cutover skips stopping it and destroy_old
+    #    won't run at all.
 
     make deploy
 
