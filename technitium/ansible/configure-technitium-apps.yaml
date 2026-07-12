@@ -53,18 +53,18 @@
 # its own comment block for exactly what to confirm before trusting it.
 #
 #---
-#- name: Configure optional Technitium DNS Apps
-#  hosts: localhost
-#  become: true
-#  gather_facts: false
-#
-#  vars:
-#    technitium_url: "http://localhost:5380"
-#    technitium_api: "{{ technitium_url }}/api"
-#    technitium_admin_user: "admin"
-#    # Used by the OPNsense DDNS/TSIG sync section near the end of this file.
-#    technitium_dns_server_ip: "172.16.100.6"
-#    dns_forward_zone: "example.com."
+- name: Configure optional Technitium DNS Apps
+  hosts: localhost
+  become: true
+  gather_facts: false
+
+  vars:
+    technitium_url: "http://localhost:5380"
+    technitium_api: "{{ technitium_url }}/api"
+    technitium_admin_user: "admin"
+    # Used by the OPNsense DDNS/TSIG sync section near the end of this file.
+    technitium_dns_server_ip: "172.16.100.6"
+    dns_forward_zone: "example.com."
 #
 #  tasks:
 #    ###########################################################################
@@ -125,18 +125,18 @@
 #    # WEIGHTED ROUND ROBIN -- APP records that distribute answers across
 #    # multiple IPs by weight. Also no config file (confirmed live).
 #    ###########################################################################
-#    - name: Install Weighted Round Robin app
-#      uri:
-#        url: "{{ technitium_api }}/apps/downloadAndInstall"
-#        method: POST
-#        headers:
-#          Authorization: "Bearer {{ technitium_session_token }}"
-#        body_format: form-urlencoded
-#        body:
-#          name: "Weighted Round Robin"
-#          url: "https://download.technitium.com/dns/apps/WeightedRoundRobinApp-v5.zip"
-#        status_code: 200
-#
+   - name: Install Weighted Round Robin app
+     uri:
+       url: "{{ technitium_api }}/apps/downloadAndInstall"
+       method: POST
+       headers:
+         Authorization: "Bearer {{ technitium_session_token }}"
+       body_format: form-urlencoded
+       body:
+         name: "Weighted Round Robin"
+         url: "https://download.technitium.com/dns/apps/WeightedRoundRobinApp-v5.zip"
+       status_code: 200
+
 #    ###########################################################################
 #    # ADVANCED BLOCKING -- per-client/per-network blocking groups, each with
 #    # its own allow/block lists. No secrets involved. The config below is the
