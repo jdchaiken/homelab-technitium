@@ -61,4 +61,5 @@ Developer Scripts:
 
 Terraform Scripts:
 - technitium/terraform/scripts/next-vmid.sh
+- technitium/terraform/scripts/current-prod-vmid.sh
 - technitium/terraform/scripts/vmid-file.sh

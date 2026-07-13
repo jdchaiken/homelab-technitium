@@ -100,15 +100,16 @@ variable "old_vm_id" {
   type        = number
   default     = null
   description = <<-EOT
-    VMID of the current production VM, stopped by cutover just before its
-    IP is handed to the new one (required so the two VMs never briefly
-    share prod_vm_ip). Its actual destruction is handled natively by
-    Terraform (technitium_temp has create_before_destroy = true), not by
-    this variable. For a real rebuild, set this to the CURRENT production
-    VMID (check `terraform output new_vmid` from the last successful
-    deploy) in the SAME apply as bumping rebuild_id. Leave unset (null)
-    only when there's no previous VM at all -- e.g. the first build, or a
-    rebuild right after `terraform destroy`.
+    Manual override for the VMID stopped by cutover just before its IP is
+    handed to the new VM. Normally you don't need to set this at all: main.tf
+    auto-detects the current production VM (data.external.current_prod_vmid)
+    by asking Proxmox which VM in the reserved range actually holds
+    prod_vm_ip, so old_vm_id no longer needs to be hand-updated before every
+    rebuild. Only set this if you need to force a specific VMID (e.g. the
+    auto-detected VM is wrong, or you deliberately want to skip stopping
+    anything by some other means). Its actual destruction is handled
+    natively by Terraform (technitium_temp has create_before_destroy = true),
+    not by this variable. Leave null (the default) for normal operation.
   EOT
 }
 

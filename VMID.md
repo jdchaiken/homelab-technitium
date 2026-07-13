@@ -12,10 +12,18 @@ Allocator:
 
 Flow:
 
-1. Scan all Proxmox VMIDs cluster-wide (`pvesh get /cluster/resources --type vm`)
-2. Return the highest VMID found, plus 1 (or 4000 if the cluster has no VMs)
+1. Scan Proxmox VMIDs cluster-wide, filtered to the 4000–4999 GitOps range
+2. Return the highest VMID found in that range, plus 1 (or 4000 if none exist)
 
-Known gap: the allocator does not filter to the 4000–4999 GitOps range
-and has no wraparound — it will keep incrementing past 4999 if higher
-VMIDs exist elsewhere in the cluster. Keep VMIDs above 4999 out of use
-until this is tightened.
+Errors out (does not wrap around) if the range is exhausted at 4999.
+
+Current-production detection:
+
+    technitium/terraform/scripts/current-prod-vmid.sh
+
+Same range filter, but instead of finding the next free ID, it finds
+whichever VM in the range currently has `prod_vm_ip` configured. Terraform
+uses this to auto-detect the VM to stop/destroy during cutover, so
+operators don't need to manually track `old_vm_id` between rebuilds.
+Both scripts must be deployed to `/opt/infra/technitium` on every PVE node
+(see INSTALL.md) since Terraform invokes them over SSH.

@@ -127,10 +127,11 @@ Terraform will reference the snippet:
 
 Additionally: 
 
-Copy next-vmid.sh to the /opt/infra/technitium folder on the PVE Host
+Copy next-vmid.sh and current-prod-vmid.sh to the /opt/infra/technitium folder on the PVE Host
 ```bash
 clush -g pve mkdir -p /opt/infra/technitium
 clush -g pve -c technitium/terraform/scripts/next-vmid.sh --dest /opt/infra/technitium
+clush -g pve -c technitium/terraform/scripts/current-prod-vmid.sh --dest /opt/infra/technitium
 clush -g pve chmod +x /opt/infra/technitium/*
 
 #

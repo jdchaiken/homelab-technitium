@@ -29,22 +29,18 @@ See TSIG-ROTATION.md.
 vm_id and IP drift are deliberately ignored so a routine apply can't
 force-replace or revert the running server. To actually rebuild:
 
-    # 1. Bump the rebuild trigger (any new value works, e.g. increment it)
-    #    in technitium/terraform/local/terraform.tfvars:
+    # Bump the rebuild trigger (any new value works, e.g. increment it)
+    # in technitium/terraform/local/terraform.tfvars:
     rebuild_id = "2"
-
-    # 2. Confirm old_vm_id in the same file matches the CURRENT production
-    #    VMID (check with `terraform output new_vmid` after the last
-    #    successful deploy) -- this is the VM that gets destroyed after
-    #    cutover. Leave old_vm_id unset/commented out if there's no
-    #    previous VM to replace (first build, or right after a
-    #    `terraform destroy`) -- cutover skips stopping it and destroy_old
-    #    won't run at all.
 
     make deploy
 
-This builds a fresh temp VM, validates DNS on it, cuts it over to
-prod_vm_ip, then destroys old_vm_id.
+Terraform auto-detects the current production VMID (whichever VM currently
+holds prod_vm_ip, via current-prod-vmid.sh) -- no manual old_vm_id tracking
+needed between rebuilds. This builds a fresh temp VM, validates DNS on it,
+cuts it over to prod_vm_ip, stops the detected old VM, then destroys it
+natively. Leave `old_vm_id` commented out in terraform.tfvars; only set it
+to override auto-detection with a specific VMID.
 
 ---
 

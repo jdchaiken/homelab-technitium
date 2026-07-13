@@ -72,9 +72,15 @@ Terraform automates:
 
     technitium/terraform/scripts/next-vmid.sh
 
-Returns the highest VMID in use cluster-wide, plus 1 (intended for the
-4000–4999 GitOps range — see VMID.md for a known gap in range
-enforcement).
+Returns the highest VMID in use within the 4000–4999 GitOps range, plus 1.
+
+### Current production VMID detection
+
+    technitium/terraform/scripts/current-prod-vmid.sh
+
+Finds whichever VM in that same range currently holds `prod_vm_ip`, so
+Terraform can auto-detect and stop/destroy the old VM during cutover
+without operators having to hand-maintain `old_vm_id`. See VMID.md.
 
 ---
 

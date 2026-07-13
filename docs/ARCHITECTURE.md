@@ -62,7 +62,8 @@ Terraform:
    VM and runs the install + configure Ansible playbooks locally
    (Ansible is never invoked remotely from outside the VM)
 4. Polls DNS on the temporary IP until Technitium answers
-5. Stops the old VM, moves the new VM to the production IP, reboots it
+5. Detects the current production VM (via current-prod-vmid.sh), stops it,
+   moves the new VM to the production IP, reboots it
 6. Destroys the old VM
 
 Zero downtime.

@@ -18,5 +18,5 @@ vm_password = "CHANGE_ME"
 ssh_pubkey  = "ssh-ed25519 AAAA...yourkey"
 # ssh_privkey = "~/.ssh/id_ed25519"        # optional, defaults to ~/.ssh/id_ed25519
 
-# old_vm_id = 3000                         # optional, defaults to null -- unset for a first build / no VM to replace
+# old_vm_id = 3000                         # optional override, defaults to null -- Terraform auto-detects the current production VMID; only set this to force a specific one
 # rebuild_id = "1"                         # optional, defaults to "1" -- bump this to force a rebuild + cutover

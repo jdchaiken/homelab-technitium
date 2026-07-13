@@ -39,9 +39,33 @@ data "external" "vmid" {
   program = ["ssh", "root@${var.pm_node}", "/opt/infra/technitium/next-vmid.sh"]
 }
 
+###############################################################################
+# Current Production VMID Detection (GitOps-safe)
+#
+# old_vm_id used to be a value operators had to remember to update in
+# terraform.tfvars before every single rebuild -- easy to forget, and a
+# stale value either fails loudly (VM already gone) or, worse, could target
+# the wrong VM. This finds the CURRENT production VM itself, the same way
+# next-vmid.sh finds the next free ID: query Proxmox for whichever VM in
+# the reserved range actually holds prod_vm_ip right now.
+###############################################################################
+
+data "external" "current_prod_vmid" {
+  program = ["ssh", "root@${var.pm_node}", "/opt/infra/technitium/current-prod-vmid.sh"]
+  query = {
+    prod_ip = trimspace(element(split("/", var.prod_vm_ip), 0))
+  }
+}
+
 locals {
   new_vmid   = tonumber(data.external.vmid.result.vmid)
   bw_env_tmp = "/tmp/technitium-bw-env-${local.new_vmid}"
+
+  # var.old_vm_id is kept only as a manual override escape hatch (e.g.
+  # deliberately skipping the stop step); leave it null (the default) to
+  # let Terraform detect the current production VM on its own.
+  detected_old_vm_id = data.external.current_prod_vmid.result.vmid != "" ? tonumber(data.external.current_prod_vmid.result.vmid) : null
+  old_vm_id          = var.old_vm_id != null ? var.old_vm_id : local.detected_old_vm_id
 }
 
 ###############################################################################
@@ -257,11 +281,11 @@ resource "null_resource" "cutover" {
     command = <<-EOT
       set -e
 
-      %{if var.old_vm_id != null~}
-      echo "Stopping old VM ${var.old_vm_id}..."
-      ssh root@${var.pm_node} "qm stop ${var.old_vm_id}"
+      %{if local.old_vm_id != null~}
+      echo "Stopping old VM ${local.old_vm_id}..."
+      ssh root@${var.pm_node} "qm stop ${local.old_vm_id}"
       %{else~}
-      echo "old_vm_id is unset -- no previous VM to stop (first build or post-destroy rebuild)."
+      echo "No previous production VM detected -- nothing to stop (first build or post-destroy rebuild)."
       %{endif~}
 
       PROD_IP="$(echo "${var.prod_vm_ip}" | cut -d'/' -f1)"
