@@ -153,13 +153,15 @@
     # longer exist.
     #
     # This MUST run before the "Store ... in Bitwarden" tasks below. The
-    # installer points /etc/resolv.conf at 127.0.0.1 (itself), and
-    # Technitium's default recursion policy (AllowOnlyForPrivateNetworks)
-    # does NOT cover loopback -- only UseSpecifiedNetworkACL gets the "deny
-    # all except loopback" fallback. Until this task switches to that
-    # policy, every system DNS lookup on this box (including `bws` talking
-    # to identity.bitwarden.com) gets SERVFAIL from the local resolver.
-    # Confirmed by sending raw queries to 127.0.0.1 on a freshly booted VM.
+    # installer points /etc/resolv.conf at 127.0.0.1 (itself), so every
+    # system DNS lookup on this box (including `bws` talking to
+    # identity.bitwarden.com, and `git pull` resolving gitea.example.com)
+    # goes through Technitium's own recursion ACL. UseSpecifiedNetworkACL
+    # does NOT implicitly trust loopback -- confirmed live: with only the
+    # LAN CIDRs listed below, queries sourced from 127.0.0.1 got SERVFAIL
+    # even though the exact same query from another host on those same
+    # CIDRs worked fine. 127.0.0.1/32 and ::1/128 have to be listed
+    # explicitly.
     ###########################################################################
     - name: Configure resolver, ACLs, logging, and TSIG key
       uri:
@@ -173,7 +175,7 @@
           forwarders: "{{ upstream_resolver_ip }}"
           dnssecValidation: true
           recursion: "UseSpecifiedNetworkACL"
-          recursionNetworkACL: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+          recursionNetworkACL: "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
           zoneTransferAllowedNetworks: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
           logQueries: true
           tsigKeys: "{{ tsig_key_name }}|{{ tsig_secret }}|{{ tsig_algorithm }}"
