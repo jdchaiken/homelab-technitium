@@ -66,6 +66,10 @@
     # though every other external host this pipeline needs was reachable
     # fine from the same VLAN.
     ###########################################################################
+
+    # Commented out the download from MSFT because the IP was blocked by qfeeds and breaking the
+    # job.  I have downloaded the .deb file and placed it in the ansible/files folder
+    # The task immediately below uses that file instead of downloading it.
     # - name: Download Microsoft package repo config
     #   get_url:
     #     url: "https://packages.microsoft.com/config/debian/13/packages-microsoft-prod.deb"
