@@ -59,7 +59,16 @@
   gather_facts: false
 
   vars:
-    technitium_url: "http://localhost:5380"
+    # Unlike configure-technitium.yaml and configure-technitium-tls.yaml
+    # (which run earlier and correctly use the stock HTTP port before it's
+    # changed), this file is meant to run AFTER configure-technitium-tls.yaml
+    # -- which moves the web console to webServiceHttpPort 80 (redirect-only)
+    # / webServiceTlsPort 8443. localhost:5380 is no longer listening at all
+    # by that point. 127.0.0.1 (not the real hostname) is deliberate too --
+    # the cert's SAN is ns1.example.com, which will never match a loopback
+    # IP, hence validate_certs: false on the uri tasks below rather than
+    # relying on DNS resolution being warm this early.
+    technitium_url: "https://127.0.0.1:8443"
     technitium_api: "{{ technitium_url }}/api"
     technitium_admin_user: "admin"
     # Used by the OPNsense DDNS/TSIG sync section near the end of this file.
@@ -93,6 +102,7 @@
       uri:
         url: "{{ technitium_api }}/user/login"
         method: POST
+        validate_certs: false
         body_format: form-urlencoded
         body:
           user: "{{ technitium_admin_user }}"
@@ -115,6 +125,7 @@
       uri:
         url: "{{ technitium_api }}/apps/downloadAndInstall"
         method: POST
+        validate_certs: false
         headers:
           Authorization: "Bearer {{ technitium_session_token }}"
         body_format: form-urlencoded
@@ -131,6 +142,7 @@
       uri:
         url: "{{ technitium_api }}/apps/downloadAndInstall"
         method: POST
+        validate_certs: false
         headers:
           Authorization: "Bearer {{ technitium_session_token }}"
         body_format: form-urlencoded
