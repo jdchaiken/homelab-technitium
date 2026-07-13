@@ -10,6 +10,9 @@
     technitium_admin_user: "admin"
     zone_dir: "/opt/infra/technitium/dns/zones"
     upstream_resolver_ip: "172.16.100.1"
+    # Overridden via -e from main.tf's remote-exec chain; defaults here only
+    # matter when running this playbook by hand.
+    dns_hostname: "ns1.example.com"
 
   tasks:
     ###########################################################################
@@ -139,10 +142,36 @@
     # here.
     ###########################################################################
     - name: Generate TSIG shared secret
+      when: not (is_staging | default(false) | bool)
       set_fact:
         tsig_key_name: "externaldns-key"
         tsig_algorithm: "hmac-sha256"
         tsig_secret: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=32') }}"
+      no_log: true
+
+    ###########################################################################
+    # 7b. STAGING: REUSE PRODUCTION'S REAL TSIG KEY INSTEAD OF GENERATING ONE
+    # Staging has no separate ExternalDNS/OPNsense to test DDNS against, so
+    # there's no reason for it to have its own TSIG key -- fetch production's
+    # by name instead (same bws secret list + selectattr pattern already
+    # used by configure-technitium-apps.yaml's OPNsense sync module).
+    # bw_token/bw_projectid are already parsed earlier in this file.
+    ###########################################################################
+    - name: Fetch production's TSIG key from Bitwarden by name
+      when: is_staging | default(false) | bool
+      shell: |
+        export BWS_ACCESS_TOKEN="{{ bw_token }}"
+        bws secret list "{{ bw_projectid }}" -o json
+      register: bw_secrets_raw
+      changed_when: false
+      no_log: true
+
+    - name: Extract TSIG name/algorithm/secret from the Bitwarden secret list
+      when: is_staging | default(false) | bool
+      set_fact:
+        tsig_key_name: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-name') | map(attribute='value') | list | first) }}"
+        tsig_algorithm: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-algorithm') | map(attribute='value') | list | first) }}"
+        tsig_secret: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-secret') | map(attribute='value') | list | first) }}"
       no_log: true
 
     ###########################################################################
@@ -171,7 +200,7 @@
           Authorization: "Bearer {{ technitium_api_key }}"
         body_format: form-urlencoded
         body:
-          dnsServerDomain: "ns1.example.com"
+          dnsServerDomain: "{{ dns_hostname }}"
           forwarders: "{{ upstream_resolver_ip }}"
           dnssecValidation: true
           recursion: "UseSpecifiedNetworkACL"
@@ -190,6 +219,7 @@
     # bws releases.
     ###########################################################################
     - name: Store Technitium API key in Bitwarden
+      when: not (is_staging | default(false) | bool)
       shell: |
         export BWS_ACCESS_TOKEN="{{ bw_token }}"
         bws secret create "technitium-ansible-api-key" "{{ technitium_api_key }}" "{{ bw_projectid }}"
@@ -199,8 +229,11 @@
 
     ###########################################################################
     # 10. STORE TSIG VALUES IN BITWARDEN
+    # Staging skips this entirely -- it reused production's existing key
+    # above rather than generating a new one, so there's nothing new to store.
     ###########################################################################
     - name: Store TSIG values in Bitwarden
+      when: not (is_staging | default(false) | bool)
       shell: |
         export BWS_ACCESS_TOKEN="{{ bw_token }}"
         bws secret create "externaldns-tsig-name" "{{ tsig_key_name }}" "{{ bw_projectid }}"

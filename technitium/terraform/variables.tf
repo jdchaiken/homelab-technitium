@@ -74,6 +74,59 @@ variable "gateway_ip" {
 }
 
 ###############################################################################
+# Environment Identity (staging support)
+###############################################################################
+variable "dns_hostname" {
+  type        = string
+  default     = "ns1.example.com"
+  description = <<-EOT
+    Hostname this Technitium instance identifies as -- used for its own
+    dnsServerDomain setting, the Let's Encrypt cert's domain (tls_domain),
+    and the wait_for_dns readiness check. Override for staging (e.g.
+    "ns1-staging.example.com") so its TLS cert and DNS self-identity
+    don't collide with production's.
+  EOT
+}
+
+variable "acme_server" {
+  type        = string
+  default     = ""
+  description = <<-EOT
+    ACME directory URL passed to certbot's --server flag. Empty (the
+    default) means certbot's own built-in production directory -- do not
+    set this for production. Staging sets this to Let's Encrypt's staging
+    directory (https://acme-staging-v02.api.letsencrypt.org/directory) so
+    repeated test rebuilds don't risk production's real rate limits.
+  EOT
+}
+
+variable "nfs_subdir" {
+  type        = string
+  default     = "technitium"
+  description = <<-EOT
+    Subdirectory under the shared NFS mount where the persisted Let's
+    Encrypt cert/key/renewal state lives. Override for staging (e.g.
+    "technitium-staging") so it doesn't read or overwrite production's
+    actual certificate state on the same NFS export.
+  EOT
+}
+
+variable "is_staging" {
+  type        = bool
+  default     = false
+  description = <<-EOT
+    Set true for a staging deploy. Staging has no separate ExternalDNS/
+    OPNsense to test DDNS against, so instead of generating and writing a
+    new TSIG key to Bitwarden every rebuild (not idempotent -- bws secret
+    create makes a new dated entry every time), staging fetches
+    production's real, already-generated TSIG key from Bitwarden by name
+    and reuses it. Also skips writing technitium-ansible-api-key to
+    Bitwarden (nothing reads it back programmatically; staging doesn't
+    need its own audit entry there).
+  EOT
+}
+
+###############################################################################
 # VM Credentials
 ###############################################################################
 variable "vm_password" {

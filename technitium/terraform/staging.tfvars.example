@@ -1,0 +1,52 @@
+# Staging environment -- exercises the exact same Terraform/Ansible pipeline
+# as production against throwaway infrastructure. Copy to local/staging.tfvars
+# (gitignored, same *.tfvars rule that covers terraform.tfvars) and fill in
+# real credentials. Deploy with `make deploy-staging`, tear down with
+# `make destroy-staging`. See docs/OPERATIONS.md for the full explanation of
+# why staging reuses production's TSIG key and how NFS cert storage is kept
+# separate.
+
+# Same Proxmox cluster/credentials as production -- staging runs on the same
+# nodes, just with different IPs/VMIDs/names.
+pm_api_url  = "https://pve01:8006/api2/json"
+pm_user     = "root@pam"
+pm_password = "CHANGE_ME"
+
+pm_node     = "pve01"
+target_node = "pve01"
+datastore   = "tank"
+
+cloud_init_image_id = "tank:iso/debian-13-generic-amd64.qcow2"
+# cloudinit_template = 9000                # optional, defaults to 9000
+
+# .8/.9 are reserved for a future redundant DNS server -- staging uses the
+# next two addresses after that.
+temp_vm_ip   = "172.16.100.10/24"
+prod_vm_ip   = "172.16.100.11/24"
+gateway_ip   = "172.16.100.1"
+prod_vm_name = "ns1-staging"
+
+vm_password = "CHANGE_ME"
+ssh_pubkey  = "ssh-ed25519 AAAA...yourkey"
+# ssh_privkey = "~/.ssh/id_ed25519"        # optional, defaults to ~/.ssh/id_ed25519
+
+# old_vm_id left unset -- first build, nothing to replace yet.
+# rebuild_id = "1"                         # optional, defaults to "1" -- bump this to force a rebuild + cutover
+
+###############################################################################
+# Staging-specific identity
+###############################################################################
+dns_hostname = "ns1-staging.example.com"
+
+# Let's Encrypt's staging directory -- untrusted certs, but no risk to
+# production's real rate limits no matter how many times staging rebuilds.
+acme_server = "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+# Separate subfolder on the same NFS export as production, so staging's
+# certbot runs can't read or overwrite production's actual cert state.
+nfs_subdir = "technitium-staging"
+
+# Staging has no separate ExternalDNS/OPNsense to test DDNS against, so it
+# reuses production's real TSIG key (fetched from Bitwarden by name) instead
+# of generating and writing a new one every rebuild.
+is_staging = true

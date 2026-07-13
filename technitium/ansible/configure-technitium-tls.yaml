@@ -8,10 +8,18 @@
     technitium_url: "http://localhost:5380"
     technitium_api: "{{ technitium_url }}/api"
     technitium_admin_user: "admin"
-    tls_domain: "ns1.example.com"
+    # Overridden via -e from main.tf's remote-exec chain; defaults here only
+    # matter when running this playbook by hand.
+    dns_hostname: "ns1.example.com"
+    tls_domain: "{{ dns_hostname }}"
     pfx_path: "/etc/dns/{{ tls_domain }}.pfx"
     pfx_pass_file: "/etc/dns/.pfx_pass"
     cloudflare_credentials_path: "/etc/letsencrypt/cloudflare/credentials.ini"
+    # Staging (main.tf passes -e acme_server=https://acme-staging-v02...)
+    # uses Let's Encrypt's staging directory so repeated test rebuilds don't
+    # risk production's real rate limits. Empty means certbot's own default
+    # (real production directory) -- see the certbot task below.
+    acme_server: ""
     # Persistent, cross-rebuild storage for the Let's Encrypt cert/key/
     # renewal state, so it survives the fact that every rebuild is a brand
     # new, ephemeral VM. See task 4 below.
@@ -30,7 +38,11 @@
     nfs_server: "nas01.example.com"
     nfs_export_path: "/mnt/tank/files/config"
     nfs_mount_point: "/mnt/technitium-share"
-    letsencrypt_config_dir: "{{ nfs_mount_point }}/technitium/letsencrypt"
+    # Staging uses a different subdir ("technitium-staging") on this same
+    # NFS export so it can't read or overwrite production's actual
+    # certificate state.
+    nfs_subdir: "technitium"
+    letsencrypt_config_dir: "{{ nfs_mount_point }}/{{ nfs_subdir }}/letsencrypt"
     web_console_http_port: 80
     web_console_tls_port: 8443
 
@@ -162,7 +174,7 @@
 
     - name: Create technitium subdirectory on the share
       file:
-        path: "{{ nfs_mount_point }}/technitium"
+        path: "{{ nfs_mount_point }}/{{ nfs_subdir }}"
         state: directory
         mode: "0700"
 
@@ -194,6 +206,10 @@
       no_log: true
 
     - name: Issue Let's Encrypt certificate for {{ tls_domain }}
+      # acme_server empty (production default) omits --server entirely,
+      # letting certbot use its own built-in production directory -- only
+      # staging passes a real value here (Let's Encrypt's staging
+      # directory), so this must never be hardcoded for production.
       command: >
         certbot certonly
         --config-dir {{ letsencrypt_config_dir }}
@@ -201,6 +217,7 @@
         --dns-cloudflare-credentials {{ cloudflare_credentials_path }}
         --dns-cloudflare-propagation-seconds 30
         -d {{ tls_domain }}
+        {{ '--server ' + acme_server if acme_server | default('') != '' else '' }}
         --non-interactive --agree-tos --email {{ acme_email }} --no-eff-email
         --keep-until-expiring
 

@@ -44,7 +44,47 @@ to override auto-detection with a specific VMID.
 
 ---
 
-# 5. Check CI/CD
+# 5. Staging Environment
+
+A second, parallel deploy target for testing Terraform/Ansible changes
+before trusting them against real production. Same pipeline, same Proxmox
+cluster, different IPs/hostname/state:
+
+    make deploy-staging     # build/rebuild staging
+    make destroy-staging    # tear it down entirely
+
+Setup (one-time): copy
+`technitium/terraform/staging.tfvars.example` to
+`technitium/terraform/local/staging.tfvars` and fill in real credentials.
+
+Staging runs at `172.16.100.10` (temp) / `172.16.100.11` (its "production"
+analog, named `ns1-staging`), identifies as `ns1-staging.example.com`,
+and issues certs from **Let's Encrypt's staging directory** -- untrusted by
+browsers, but with no risk to production's real rate limits no matter how
+many times it's rebuilt.
+
+Three things are deliberately isolated from production, not shared:
+
+- **TSIG key**: staging has no separate ExternalDNS/OPNsense to test DDNS
+  against, so it fetches production's real TSIG key from Bitwarden by name
+  and reuses it, rather than generating (and polluting Bitwarden with) a
+  new one every rebuild.
+- **NFS cert storage**: staging's persisted Let's Encrypt state lives in a
+  separate subfolder (`technitium-staging/`) on the same NFS export as
+  production's (`technitium/`) -- same share, can't collide.
+- **Terraform state**: staging deploys to its own `staging` workspace, kept
+  separate from production's `default` workspace. Both `deploy` and
+  `deploy-staging` explicitly select their workspace before applying, so
+  running one after the other can never silently apply against the wrong
+  environment.
+
+`technitium-ansible-api-key` is the one thing staging never touches at all
+(skipped, not shared) -- nothing in this repo reads it back
+programmatically, so there's no reason for staging to write its own copy.
+
+---
+
+# 6. Check CI/CD
 
 Gitea validates:
 
@@ -55,13 +95,13 @@ Gitea validates:
 
 ---
 
-# 6. Check VMID Allocation
+# 7. Check VMID Allocation
 
     technitium/terraform/scripts/next-vmid.sh
 
 ---
 
-# 7. Check Secrets
+# 8. Check Secrets
 
     secrets/bw.env.sample
 
@@ -71,12 +111,13 @@ Real secrets live in Proxmox:
 
 ---
 
-# 8. Summary
+# 9. Summary
 
 Operators manage:
 
 - DNS changes
 - TSIG rotation
 - VM rebuilds
+- Staging test deploys
 - CI/CD validation
 - Secret hygiene

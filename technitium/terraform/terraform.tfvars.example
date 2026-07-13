@@ -1,3 +1,5 @@
+# Production tfvars. For a throwaway pre-deploy test environment on the
+# same cluster, see staging.tfvars.example instead.
 pm_api_url  = "https://pve01:8006/api2/json"
 pm_user     = "root@pam"
 pm_password = "CHANGE_ME"

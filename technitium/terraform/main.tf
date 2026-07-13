@@ -215,9 +215,9 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
     inline = [
       "chmod 600 /root/bw.env",
       "ansible-playbook /opt/infra/technitium/technitium/ansible/install-technitium.yaml",
-      "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium.yaml",
-      "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium-tls.yaml",
-      "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium-apps.yaml",
+      "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium.yaml -e dns_hostname=${var.dns_hostname} -e is_staging=${var.is_staging}",
+      "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium-tls.yaml -e dns_hostname=${var.dns_hostname} -e acme_server=${var.acme_server} -e nfs_subdir=${var.nfs_subdir}",
+      "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium-apps.yaml -e dns_hostname=${var.dns_hostname}",
     ]
   }
 }
@@ -240,7 +240,7 @@ resource "null_resource" "wait_for_dns" {
       set -e
 
       VM_IP="$(echo "${var.temp_vm_ip}" | cut -d'/' -f1)"
-      HOSTNAME="ns1.example.com"
+      HOSTNAME="${var.dns_hostname}"
 
       echo "Waiting for DNS on $VM_IP..."
 

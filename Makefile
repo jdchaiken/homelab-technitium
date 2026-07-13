@@ -75,12 +75,18 @@ sync-snippets: ## Sync the cloud-init snippet to Proxmox shared storage
 # Terraform Deployment (Full GitOps Flow)
 ###############################################################################
 deploy: sync-snippets ## Deploy Technitium DNS via Terraform (VM create, Ansible via Terraform remote-exec, DNS cutover — all handled by Terraform)
-		cd technitium/terraform && terraform init && terraform apply -auto-approve -var-file=local/terraform.tfvars
+		cd technitium/terraform && terraform init
+		# Explicit workspace select: without this, a prior `make deploy-staging`
+		# in this same checkout would leave the CLI pointed at the "staging"
+		# workspace, and this apply would silently target staging's state
+		# instead of production's.
+		cd technitium/terraform && terraform workspace select default
+		cd technitium/terraform && terraform apply -auto-approve -var-file=local/terraform.tfvars
 
 		@echo "$(BLUE)Confirming DNS on production IP...$(RESET)"
 		@PROD_IP=$$(grep '^prod_vm_ip' technitium/terraform/local/terraform.tfvars | sed -E 's/.*"([0-9.]+)\/[0-9]+".*/\1/'); \
 		for i in $$(seq 1 30); do \
-				if dig +short @$$PROD_IP technitium.example.com SOA >/dev/null 2>&1; then \
+				if dig +short @$$PROD_IP ns1.example.com SOA >/dev/null 2>&1; then \
 						echo "$(GREEN)DNS is live on $$PROD_IP$(RESET)"; \
 						break; \
 				fi; \
@@ -92,6 +98,41 @@ deploy: sync-snippets ## Deploy Technitium DNS via Terraform (VM create, Ansible
 		done
 
 		@echo "$(GREEN)Technitium deployment complete.$(RESET)"
+
+###############################################################################
+# Staging Environment
+#
+# Exercises the exact same Terraform/Ansible pipeline as `deploy` against
+# throwaway infrastructure (see technitium/terraform/staging.tfvars.example
+# and docs/OPERATIONS.md for the full reasoning: separate IPs/hostname,
+# Let's Encrypt staging ACME server, separate NFS cert subfolder, and
+# reusing -- not regenerating -- production's real TSIG key).
+###############################################################################
+deploy-staging: sync-snippets ## Deploy the staging Technitium environment for pre-deploy testing
+		cd technitium/terraform && terraform init
+		cd technitium/terraform && terraform workspace select staging || terraform workspace new staging
+		cd technitium/terraform && terraform apply -auto-approve -var-file=local/staging.tfvars
+
+		@echo "$(BLUE)Confirming DNS on staging IP...$(RESET)"
+		@STAGING_IP=$$(grep '^prod_vm_ip' technitium/terraform/local/staging.tfvars | sed -E 's/.*"([0-9.]+)\/[0-9]+".*/\1/'); \
+		for i in $$(seq 1 30); do \
+				if dig +short @$$STAGING_IP ns1-staging.example.com SOA >/dev/null 2>&1; then \
+						echo "$(GREEN)DNS is live on $$STAGING_IP$(RESET)"; \
+						break; \
+				fi; \
+				sleep 5; \
+				if [ $$i -eq 30 ]; then \
+						echo "$(YELLOW)DNS did not confirm on staging IP in time$(RESET)"; \
+						exit 1; \
+				fi; \
+		done
+
+		@echo "$(GREEN)Staging deployment complete.$(RESET)"
+
+destroy-staging: ## Tear down the staging environment entirely
+		cd technitium/terraform && terraform init
+		cd technitium/terraform && terraform workspace select staging
+		cd technitium/terraform && terraform destroy -var-file=local/staging.tfvars
 
 ###############################################################################
 # Developer Environment
