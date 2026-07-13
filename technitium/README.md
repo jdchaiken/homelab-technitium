@@ -9,7 +9,7 @@ in a fully declarative GitOps workflow.
 
     technitium/
       ansible/        # install + configure playbooks
-      cloud-init/     # technitium-user.yaml
+      cloud-init/     # technitium-user.yaml.example (real copy: local/, gitignored)
       terraform/      # VM lifecycle automation
         scripts/      # VMID allocator
 
@@ -41,9 +41,13 @@ No manual API key creation is required — see INSTALL.md.
 
 ## Cloud-init
 
-Located under:
+Tracked template:
 
-    technitium/cloud-init/technitium-user.yaml
+    technitium/cloud-init/technitium-user.yaml.example
+
+Contains a real SSH key, so it's not tracked directly -- copy the example to
+`technitium/cloud-init/local/technitium-user.yaml` (gitignored) and fill in
+your own key. `make deploy` syncs that local copy to Proxmox automatically.
 
 Cloud-init:
 

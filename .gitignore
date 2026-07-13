@@ -29,6 +29,9 @@ secrets/bw.env
 ### Cloud-init ###
 *.cidata
 cloud-init-output.log
+# Real, operator-specific user-data (contains a real SSH key) -- see
+# technitium/cloud-init/technitium-user.yaml.example for the tracked template.
+technitium/cloud-init/local/
 
 ### Ansible ###
 *.retry

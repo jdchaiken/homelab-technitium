@@ -32,10 +32,17 @@ Contents:
     BW_ORGID="your-organization-id"
     BW_PROJECTID="your-project-id"
     TECHNITIUM_ADMIN_PASSWORD="your-new-technitium-admin-password"
+    CLOUDFLARE_API_TOKEN="your-cloudflare-api-token-scoped-to-dns-edit"
+    ACME_EMAIL="your-acme-contact-email"
 
 TECHNITIUM_ADMIN_PASSWORD is the password Ansible sets on Technitium's
 default `admin` account on first boot (Technitium ships with
 `admin`/`admin`). It replaces the old manual "bootstrap API key" flow.
+
+ACME_EMAIL is the Let's Encrypt registration contact used by
+`configure-technitium-tls.yaml`'s certbot call -- kept out of the tracked
+playbook (and out of git entirely) so no personal email address ends up in
+version control. Use a role address, not a personal one.
 
 Permissions:
 

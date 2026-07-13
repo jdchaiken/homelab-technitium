@@ -51,6 +51,7 @@
       set_fact:
         technitium_admin_password: "{{ bw_env_raw | regex_search('TECHNITIUM_ADMIN_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
         cloudflare_api_token: "{{ bw_env_raw | regex_search('CLOUDFLARE_API_TOKEN=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+        acme_email: "{{ bw_env_raw | regex_search('ACME_EMAIL=\"?([^\"\\n]+)\"?', '\\1') | first }}"
       no_log: true
 
     ###########################################################################
@@ -184,7 +185,7 @@
         --dns-cloudflare-credentials {{ cloudflare_credentials_path }}
         --dns-cloudflare-propagation-seconds 30
         -d {{ tls_domain }}
-        --non-interactive --agree-tos --email admin@example.com --no-eff-email
+        --non-interactive --agree-tos --email {{ acme_email }} --no-eff-email
         --keep-until-expiring
 
     ###########################################################################

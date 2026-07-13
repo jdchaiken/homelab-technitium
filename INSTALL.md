@@ -101,9 +101,15 @@ Record your template VMID:
 
     cloudinit_template = <YOUR_TEMPLATE_VMID>
 
-Add the cloud-init user-data file as a Proxmox snippet:
+Add the cloud-init user-data file as a Proxmox snippet. This file carries a
+real SSH public key, so it's not tracked in git -- copy the tracked example
+to the gitignored `local/` path and fill in your own key first:
 
-    technitium/cloud-init/technitium-user.yaml
+    cp technitium/cloud-init/technitium-user.yaml.example technitium/cloud-init/local/technitium-user.yaml
+    # edit local/technitium-user.yaml: replace the ssh_authorized_keys placeholder with your real key
+
+`make deploy` (via its `sync-snippets` step) copies that local file to
+Proxmox automatically on every deploy. For a one-off manual copy instead:
 
 Snippets must be placed in a storage that supports "Snippets".
 Recommended location:
@@ -112,11 +118,11 @@ Recommended location:
 
 Copy the file:
 
-    cp technitium/cloud-init/technitium-user.yaml /var/lib/vz/snippets/
+    cp technitium/cloud-init/local/technitium-user.yaml /var/lib/vz/snippets/
 
 -or-
 
-Copy with clush: ```clush -l root -g pve -c ./technitium-user.yaml --dest /mnt/pve/tank/snippets/```
+Copy with clush: ```clush -l root -g pve -c ./local/technitium-user.yaml --dest /mnt/pve/tank/snippets/```
 
 Ensure "Snippets" is enabled:
 Datacenter → Storage → local → Content → check "Snippets".

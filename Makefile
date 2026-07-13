@@ -62,9 +62,14 @@ pull: ## Pull latest infra repo changes
 # already sitting in Proxmox storage, no matter what's committed to git.
 ###############################################################################
 sync-snippets: ## Sync the cloud-init snippet to Proxmox shared storage
+		@if [ ! -f technitium/cloud-init/local/technitium-user.yaml ]; then \
+				echo "$(YELLOW)Missing technitium/cloud-init/local/technitium-user.yaml$(RESET)"; \
+				echo "Copy technitium/cloud-init/technitium-user.yaml.example to that path and fill in your real SSH key."; \
+				exit 1; \
+		fi
 		@PM_NODE=$$(grep '^pm_node' technitium/terraform/local/terraform.tfvars | sed -E 's/.*"([^"]+)".*/\1/'); \
 		echo "$(BLUE)Syncing technitium-user.yaml to $$PM_NODE:/mnt/pve/tank/snippets/...$(RESET)"; \
-		scp technitium/cloud-init/technitium-user.yaml root@$$PM_NODE:/mnt/pve/tank/snippets/technitium-user.yaml
+		scp technitium/cloud-init/local/technitium-user.yaml root@$$PM_NODE:/mnt/pve/tank/snippets/technitium-user.yaml
 
 ###############################################################################
 # Terraform Deployment (Full GitOps Flow)
