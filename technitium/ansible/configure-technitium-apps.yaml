@@ -52,7 +52,7 @@
 # was NOT live-tested end-to-end (no OPNsense instance available) -- see
 # its own comment block for exactly what to confirm before trusting it.
 #
-#---
+---
 - name: Configure optional Technitium DNS Apps
   hosts: localhost
   become: true
@@ -65,78 +65,79 @@
     # Used by the OPNsense DDNS/TSIG sync section near the end of this file.
     technitium_dns_server_ip: "172.16.100.6"
     dns_forward_zone: "example.com."
-#
-#  tasks:
-#    ###########################################################################
-#    # AUTH -- same pattern as configure-technitium.yaml: read bw.env for the
-#    # admin password, log in, get a session token. If you chain this file
-#    # after configure-technitium.yaml in the same ansible-playbook run
-#    # instead, you can drop this block and reuse technitium_api_key instead
-#    # of technitium_session_token in the tasks below.
-#    ###########################################################################
-#    - name: Read Bitwarden environment file
-#      set_fact:
-#        bw_env_raw: "{{ lookup('file', '/root/bw.env') }}"
-#      no_log: true
-#
-#    - name: Parse secrets needed by DNS Apps below
-#      set_fact:
-#        technitium_admin_password: "{{ bw_env_raw | regex_search('TECHNITIUM_ADMIN_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
-#        querylogs_pg_password: "{{ bw_env_raw | regex_search('TECHNITIUM_QUERYLOGS_PG_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
-#        logexporter_http_token: "{{ bw_env_raw | regex_search('TECHNITIUM_LOGEXPORTER_HTTP_TOKEN=\"?([^\"\\n]+)\"?', '\\1') | first }}"
-#        failover_smtp_password: "{{ bw_env_raw | regex_search('TECHNITIUM_FAILOVER_SMTP_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
-#      no_log: true
-#
-#    - name: Log in to Technitium
-#      uri:
-#        url: "{{ technitium_api }}/user/login"
-#        method: POST
-#        body_format: form-urlencoded
-#        body:
-#          user: "{{ technitium_admin_user }}"
-#          pass: "{{ technitium_admin_password }}"
-#        status_code: 200
-#      register: apps_login
-#      no_log: true
-#
-#    - name: Extract session token
-#      set_fact:
-#        technitium_session_token: "{{ apps_login.json.token }}"
-#      no_log: true
-#
-#    ###########################################################################
-#    # AUTO PTR -- generates PTR records automatically for A/AAAA records in
-#    # primary/forwarder zones. Confirmed live: this app has no config file
-#    # at all (GET config returns "#This app requires no config.").
-#    ###########################################################################
-#    - name: Install Auto PTR app
-#      uri:
-#        url: "{{ technitium_api }}/apps/downloadAndInstall"
-#        method: POST
-#        headers:
-#          Authorization: "Bearer {{ technitium_session_token }}"
-#        body_format: form-urlencoded
-#        body:
-#          name: "Auto PTR"
-#          url: "https://download.technitium.com/dns/apps/AutoPtrApp-v5.zip"
-#        status_code: 200
-#
-#    ###########################################################################
-#    # WEIGHTED ROUND ROBIN -- APP records that distribute answers across
-#    # multiple IPs by weight. Also no config file (confirmed live).
-#    ###########################################################################
-   - name: Install Weighted Round Robin app
-     uri:
-       url: "{{ technitium_api }}/apps/downloadAndInstall"
-       method: POST
-       headers:
-         Authorization: "Bearer {{ technitium_session_token }}"
-       body_format: form-urlencoded
-       body:
-         name: "Weighted Round Robin"
-         url: "https://download.technitium.com/dns/apps/WeightedRoundRobinApp-v5.zip"
-       status_code: 200
 
+  tasks:
+    ###########################################################################
+    # AUTH -- same pattern as configure-technitium.yaml: read bw.env for the
+    # admin password, log in, get a session token. If you chain this file
+    # after configure-technitium.yaml in the same ansible-playbook run
+    # instead, you can drop this block and reuse technitium_api_key instead
+    # of technitium_session_token in the tasks below.
+    ###########################################################################
+    - name: Read Bitwarden environment file
+      set_fact:
+        bw_env_raw: "{{ lookup('file', '/root/bw.env') }}"
+      no_log: true
+
+    - name: Parse secrets needed by DNS Apps below
+      # Auto PTR and Weighted Round Robin need no config at all, so only the
+      # admin password (already required for login) is parsed here. Add the
+      # other apps' regex_search lines back only once you also enable them
+      # and their bw.env keys actually exist -- otherwise `| first` on a
+      # missing key raises an error.
+      set_fact:
+        technitium_admin_password: "{{ bw_env_raw | regex_search('TECHNITIUM_ADMIN_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+      no_log: true
+
+    - name: Log in to Technitium
+      uri:
+        url: "{{ technitium_api }}/user/login"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          user: "{{ technitium_admin_user }}"
+          pass: "{{ technitium_admin_password }}"
+        status_code: 200
+      register: apps_login
+      no_log: true
+
+    - name: Extract session token
+      set_fact:
+        technitium_session_token: "{{ apps_login.json.token }}"
+      no_log: true
+
+    ###########################################################################
+    # AUTO PTR -- generates PTR records automatically for A/AAAA records in
+    # primary/forwarder zones. Confirmed live: this app has no config file
+    # at all (GET config returns "#This app requires no config.").
+    ###########################################################################
+    - name: Install Auto PTR app
+      uri:
+        url: "{{ technitium_api }}/apps/downloadAndInstall"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ technitium_session_token }}"
+        body_format: form-urlencoded
+        body:
+          name: "Auto PTR"
+          url: "https://download.technitium.com/dns/apps/AutoPtrApp-v5.zip"
+        status_code: 200
+
+    ###########################################################################
+    # WEIGHTED ROUND ROBIN -- APP records that distribute answers across
+    # multiple IPs by weight. Also no config file (confirmed live).
+    ###########################################################################
+    - name: Install Weighted Round Robin app
+      uri:
+        url: "{{ technitium_api }}/apps/downloadAndInstall"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ technitium_session_token }}"
+        body_format: form-urlencoded
+        body:
+          name: "Weighted Round Robin"
+          url: "https://download.technitium.com/dns/apps/WeightedRoundRobinApp-v5.zip"
+        status_code: 200
 #    ###########################################################################
 #    # ADVANCED BLOCKING -- per-client/per-network blocking groups, each with
 #    # its own allow/block lists. No secrets involved. The config below is the
