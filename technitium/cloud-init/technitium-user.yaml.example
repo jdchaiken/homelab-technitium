@@ -3,7 +3,7 @@ hostname: ns1
 fqdn: ns1.example.com
 
 ssh_authorized_keys:
-  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAJRRCwwPwP8t7LeT1ywCBMzn/y+aebmzKqCEtowOYrj admin@example.com
+  - ssh-ed25519 AAAA...yourkey your-email@example.com
 
 ssh_pwauth: true
 disable_root: false
