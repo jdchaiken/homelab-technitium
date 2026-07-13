@@ -1,18 +1,23 @@
-# Optional Technitium DNS Apps + SSO + OPNsense TSIG sync -- commented-out
-# scaffold, not run by anything.
+# Optional Technitium DNS Apps + SSO + OPNsense TSIG sync.
 #
-# Everything below is disabled. To use it:
-#   1. Uncomment the app(s) you want (strip the leading "#" from each line,
-#      keeping the rest of the line -- e.g. `sed -i 's/^#//' this_file.yaml`
-#      on a copy, or your editor's "toggle block comment").
+# Auto PTR and Weighted Round Robin (below) are LIVE -- wired into
+# technitium/terraform/main.tf's remote-exec chain, right after
+# configure-technitium-tls.yaml, so they install on every rebuild.
+# Everything else in this file is still a commented-out scaffold. To enable
+# another app:
+#   1. Uncomment it (strip the leading "#" from each line, keeping the rest
+#      of the line -- e.g. `sed -i 's/^#//' this_file.yaml` on a copy, or
+#      your editor's "toggle block comment").
 #   2. Fill in the placeholder values (domains, URLs, thresholds) for real.
 #   3. Add any new secrets to /etc/pve/technitium/bw.env on the Proxmox host
 #      (see secrets/bw.env.sample) -- NEVER hardcode a real secret here.
-#   4. Either add this file as another ansible-playbook line in
-#      technitium/terraform/main.tf's "Run the Ansible playbooks" remote-exec
-#      block (right after configure-technitium.yaml), or run it by hand
-#      later against an already-deployed instance:
+#   4. It'll then run automatically on the next rebuild via main.tf, or run
+#      it by hand against an already-deployed instance:
 #        ansible-playbook technitium/ansible/configure-technitium-apps.yaml
+#
+# technitium_url below is https://127.0.0.1:8443, not the stock
+# localhost:5380 -- this file runs AFTER configure-technitium-tls.yaml,
+# which moves the web console off the default port.
 #
 # Store URLs, install/config API endpoints, and every default config JSON
 # shown below were verified live against a running Technitium 15.3 instance

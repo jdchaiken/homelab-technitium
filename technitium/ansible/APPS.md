@@ -1,14 +1,21 @@
 # Optional Technitium Apps & Integrations
 
 Reference for every module in [`configure-technitium-apps.yaml`](configure-technitium-apps.yaml).
-That whole file is a **commented-out scaffold** — nothing in it runs on its
-own. To enable a module: strip the leading `#` from its lines, fill in the
+**Auto PTR and Weighted Round Robin are live** — wired into
+`technitium/terraform/main.tf`'s remote-exec chain (right after
+`configure-technitium-tls.yaml`), so they install on every rebuild.
+Everything else in the file is still a **commented-out scaffold**. To
+enable another module: strip the leading `#` from its lines, fill in the
 placeholder values, add any secrets it needs to `bw.env` (see
-[`secrets/bw.env.sample`](../../secrets/bw.env.sample)), then either run the
-file by hand (`ansible-playbook technitium/ansible/configure-technitium-apps.yaml`)
-against an already-deployed instance, or wire it into
-`technitium/terraform/main.tf`'s remote-exec chain to run on every deploy
-(matching how `configure-technitium-tls.yaml` is wired in).
+[`secrets/bw.env.sample`](../../secrets/bw.env.sample)) — it'll then run
+automatically on the next rebuild via `main.tf`, or run it by hand
+(`ansible-playbook technitium/ansible/configure-technitium-apps.yaml`)
+against an already-deployed instance.
+
+Note: this file runs *after* `configure-technitium-tls.yaml`, which moves
+the web console off its stock port (5380) to 8443/TLS — `technitium_url` in
+this file's `vars:` points at `https://127.0.0.1:8443` accordingly, not the
+default.
 
 Everything below except the OPNsense module was verified live against a
 running Technitium 15.3 instance — installed for real, config pulled from
@@ -18,7 +25,7 @@ this way.
 
 ---
 
-## Auto PTR
+## Auto PTR — **live**
 
 Generates PTR records automatically for A/AAAA records in primary/forwarder
 zones.
@@ -27,7 +34,7 @@ zones.
 - **Config:** none — confirmed live that this app has no config file at all
   (`GET config` returns `#This app requires no config.`).
 
-## Weighted Round Robin
+## Weighted Round Robin — **live**
 
 APP records that distribute answers across multiple IPs by weight.
 
