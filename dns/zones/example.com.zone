@@ -16,12 +16,5 @@ git     IN A    10.30.0.4
 alloy   IN A    10.30.0.10
 nas01   IN A    172.16.100.241
 
-; --- ExternalDNS will dynamically manage Gateway API hostnames ---
-; DO NOT manually define:
-; n8n
-; headlamp
-; openwebui
-; searxng
-; shields
 
 externaldns     IN TXT  "managed"
