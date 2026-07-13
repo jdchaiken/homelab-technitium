@@ -213,6 +213,13 @@ resource "proxmox_virtual_environment_vm" "technitium_temp" {
   # Terraform has a chance to deliver bw.env.)
   provisioner "remote-exec" {
     inline = [
+      # Terraform concatenates every inline entry into one combined script
+      # and only checks the LAST command's exit status -- without set -e,
+      # a failure partway through (e.g. configure-technitium-tls.yaml)
+      # would silently continue into the next ansible-playbook call against
+      # a broken, incomplete VM instead of stopping there. Invisible until
+      # a 4th line was added after what used to be the last command.
+      "set -e",
       "chmod 600 /root/bw.env",
       "ansible-playbook /opt/infra/technitium/technitium/ansible/install-technitium.yaml",
       "ansible-playbook /opt/infra/technitium/technitium/ansible/configure-technitium.yaml -e dns_hostname=${var.dns_hostname} -e is_staging=${var.is_staging}",

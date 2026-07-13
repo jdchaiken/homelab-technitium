@@ -134,7 +134,46 @@
       no_log: true
 
     ###########################################################################
-    # 7. GENERATE TSIG KEY FOR RFC2136 UPDATES
+    # 7. CONFIGURE RESOLVER, ACLs, AND LOGGING
+    # Param names verified against a live 15.3 instance -- the field names
+    # used by older Technitium API versions (RecursiveDnsServers,
+    # EnableRecursion, AllowRecursionFrom, EnableQueryLogging, ...) no
+    # longer exist.
+    #
+    # This MUST run before ANY Bitwarden network call below (both the
+    # staging TSIG fetch right after this task, and the "Store ... in
+    # Bitwarden" tasks further down). The installer points /etc/resolv.conf
+    # at 127.0.0.1 (itself), so every system DNS lookup on this box
+    # (including `bws` talking to identity.bitwarden.com, and `git pull`
+    # resolving gitea.example.com) goes through Technitium's own
+    # recursion ACL. UseSpecifiedNetworkACL does NOT implicitly trust
+    # loopback -- confirmed live: with only the LAN CIDRs listed below,
+    # queries sourced from 127.0.0.1 got SERVFAIL even though the exact
+    # same query from another host on those same CIDRs worked fine.
+    # 127.0.0.1/32 and ::1/128 have to be listed explicitly. tsigKeys is
+    # deliberately NOT set here -- see the follow-up task below, once
+    # tsig_key_name/tsig_secret/tsig_algorithm are actually known.
+    ###########################################################################
+    - name: Configure resolver, ACLs, and logging
+      uri:
+        url: "{{ technitium_api }}/settings/set"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ technitium_api_key }}"
+        body_format: form-urlencoded
+        body:
+          dnsServerDomain: "{{ dns_hostname }}"
+          forwarders: "{{ upstream_resolver_ip }}"
+          dnssecValidation: true
+          recursion: "UseSpecifiedNetworkACL"
+          recursionNetworkACL: "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+          zoneTransferAllowedNetworks: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+          logQueries: true
+        status_code: 200
+      no_log: true
+
+    ###########################################################################
+    # 8. GENERATE TSIG KEY FOR RFC2136 UPDATES
     # Technitium has no server-side "create TSIG key" API that generates a
     # secret for you -- settings/set's tsigKeys parameter just stores
     # whatever name/secret/algorithm triple you give it (confirmed against
@@ -150,12 +189,14 @@
       no_log: true
 
     ###########################################################################
-    # 7b. STAGING: REUSE PRODUCTION'S REAL TSIG KEY INSTEAD OF GENERATING ONE
+    # 8b. STAGING: REUSE PRODUCTION'S REAL TSIG KEY INSTEAD OF GENERATING ONE
     # Staging has no separate ExternalDNS/OPNsense to test DDNS against, so
     # there's no reason for it to have its own TSIG key -- fetch production's
     # by name instead (same bws secret list + selectattr pattern already
     # used by configure-technitium-apps.yaml's OPNsense sync module).
-    # bw_token/bw_projectid are already parsed earlier in this file.
+    # bw_token/bw_projectid are already parsed earlier in this file. Safe to
+    # hit the network here -- the previous task already opened loopback
+    # recursion, unlike before this file's task ordering was fixed.
     ###########################################################################
     - name: Fetch production's TSIG key from Bitwarden by name
       when: is_staging | default(false) | bool
@@ -175,24 +216,13 @@
       no_log: true
 
     ###########################################################################
-    # 8. CONFIGURE TECHNITIUM SETTINGS
-    # Param names verified against a live 15.3 instance -- the field names
-    # used by older Technitium API versions (RecursiveDnsServers,
-    # EnableRecursion, AllowRecursionFrom, EnableQueryLogging, ...) no
-    # longer exist.
-    #
-    # This MUST run before the "Store ... in Bitwarden" tasks below. The
-    # installer points /etc/resolv.conf at 127.0.0.1 (itself), so every
-    # system DNS lookup on this box (including `bws` talking to
-    # identity.bitwarden.com, and `git pull` resolving gitea.example.com)
-    # goes through Technitium's own recursion ACL. UseSpecifiedNetworkACL
-    # does NOT implicitly trust loopback -- confirmed live: with only the
-    # LAN CIDRs listed below, queries sourced from 127.0.0.1 got SERVFAIL
-    # even though the exact same query from another host on those same
-    # CIDRs worked fine. 127.0.0.1/32 and ::1/128 have to be listed
-    # explicitly.
+    # 8c. APPLY TSIG KEY TO TECHNITIUM
+    # Separate, smaller settings/set call (partial-update semantics, same as
+    # every other settings/set call in this repo) -- split out from task 7
+    # specifically so that task 7's recursion-ACL fix can run before either
+    # TSIG path above needs the network.
     ###########################################################################
-    - name: Configure resolver, ACLs, logging, and TSIG key
+    - name: Apply TSIG key to Technitium settings
       uri:
         url: "{{ technitium_api }}/settings/set"
         method: POST
@@ -200,13 +230,6 @@
           Authorization: "Bearer {{ technitium_api_key }}"
         body_format: form-urlencoded
         body:
-          dnsServerDomain: "{{ dns_hostname }}"
-          forwarders: "{{ upstream_resolver_ip }}"
-          dnssecValidation: true
-          recursion: "UseSpecifiedNetworkACL"
-          recursionNetworkACL: "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
-          zoneTransferAllowedNetworks: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
-          logQueries: true
           tsigKeys: "{{ tsig_key_name }}|{{ tsig_secret }}|{{ tsig_algorithm }}"
         status_code: 200
       no_log: true
