@@ -22,3 +22,17 @@ ssh_pubkey  = "ssh-ed25519 AAAA...yourkey"
 
 # old_vm_id = 3000                         # optional override, defaults to null -- Terraform auto-detects the current production VMID; only set this to force a specific one
 # rebuild_id = "1"                         # optional, defaults to "1" -- bump this to force a rebuild + cutover
+
+###############################################################################
+# ns2 (Secondary DNS Server) -- co-exists with ns1 in this same apply, not a
+# separate workspace/tfvars. Must be on a different Proxmox node than
+# target_node above for actual redundancy.
+###############################################################################
+ns2_target_node = "pve02"                # different node than target_node
+ns2_temp_vm_ip  = "172.16.100.8/24"
+ns2_prod_vm_ip  = "172.16.100.9/24"
+# ns2_prod_vm_name = "ns2"                 # optional, defaults to "ns2"
+# ns2_dns_hostname = "ns2.example.com"   # optional, defaults to "ns2.example.com"
+# ns2_nfs_subdir = "technitium-ns2"        # optional, defaults to "technitium-ns2"
+# ns2_old_vm_id = 3001                     # optional override, defaults to null -- auto-detected like old_vm_id
+# ns2_rebuild_id = "1"                     # optional, defaults to "1" -- independent from rebuild_id, bump this to rebuild ns2 without touching ns1

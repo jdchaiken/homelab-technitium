@@ -185,3 +185,62 @@ variable "rebuild_id" {
     lifecycle block in main.tf).
   EOT
 }
+
+###############################################################################
+# ns2 (Secondary DNS Server) -- see technitium/terraform/ns2.tf
+#
+# All prefixed ns2_ so they're unambiguous from ns1's variables above, which
+# stay untouched. ns2 is a second, independent instance living alongside
+# ns1 in the same workspace (not a swapped-in replacement like staging), so
+# it needs its own full set of node/IP/name/rebuild-trigger variables rather
+# than reusing ns1's.
+###############################################################################
+variable "ns2_target_node" {
+  type        = string
+  description = "Proxmox node ns2 runs on -- expected to differ from target_node (ns1's node) for actual redundancy"
+}
+
+variable "ns2_temp_vm_ip" {
+  type        = string
+  description = "ns2's temporary VM IP in CIDR format, used during build/validation before cutover"
+}
+
+variable "ns2_prod_vm_ip" {
+  type        = string
+  description = "ns2's stable IP in CIDR format, assigned at cutover"
+}
+
+variable "ns2_prod_vm_name" {
+  type        = string
+  default     = "ns2"
+  description = "Name ns2 is renamed to (via `qm set --name`) once cutover completes"
+}
+
+variable "ns2_dns_hostname" {
+  type        = string
+  default     = "ns2.example.com"
+  description = "Hostname ns2 identifies as -- its dnsServerDomain setting and its Let's Encrypt cert's domain"
+}
+
+variable "ns2_nfs_subdir" {
+  type        = string
+  default     = "technitium-ns2"
+  description = "Subdirectory under the shared NFS mount for ns2's persisted Let's Encrypt cert/key/renewal state -- separate from ns1's (\"technitium\") and staging's (\"technitium-staging\") on the same export"
+}
+
+variable "ns2_old_vm_id" {
+  type        = number
+  default     = null
+  description = "Manual override for the VMID ns2's cutover stops -- same auto-detect-with-override pattern as old_vm_id. Leave null for normal operation."
+}
+
+variable "ns2_rebuild_id" {
+  type        = string
+  default     = "1"
+  description = <<-EOT
+    Bump this to force a full rebuild of ns2 specifically -- completely
+    independent from rebuild_id (ns1's trigger), so rebuilding one can never
+    force-replace the other. Same create_before_destroy + cutover mechanics
+    as ns1, see ns2.tf.
+  EOT
+}

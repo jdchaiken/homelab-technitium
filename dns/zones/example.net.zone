@@ -1,6 +1,6 @@
 $TTL 300
 @       IN SOA  ns1.example.net. admin.example.net. (
-            2026071003 ; serial
+            2026071501 ; serial
             3600
             1800
             604800
@@ -8,7 +8,9 @@ $TTL 300
         )
 
         IN NS   ns1.example.net.
+        IN NS   ns2.example.net.
 ns1     IN A    172.16.100.6
+ns2     IN A    172.16.100.9
 
 ; --- Internal LoadBalancer Services ---
 ldap    IN A    10.30.0.3
