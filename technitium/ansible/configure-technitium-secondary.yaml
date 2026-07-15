@@ -36,10 +36,10 @@
         bw_env_raw: "{{ lookup('file', '/root/bw.env') }}"
       no_log: true
 
-    - name: Parse Bitwarden credentials and initial admin password
+    - name: Parse initial admin password
+      # No TSIG/Bitwarden-secret parsing needed here -- see the note on the
+      # zone-creation task below for why ns2 doesn't need a TSIG key at all.
       set_fact:
-        bw_token: "{{ bw_env_raw | regex_search('BW_TOKEN=\"?([^\"\\n]+)\"?', '\\1') | first }}"
-        bw_projectid: "{{ bw_env_raw | regex_search('BW_PROJECTID=\"?([^\"\\n]+)\"?', '\\1') | first }}"
         technitium_admin_password: "{{ bw_env_raw | regex_search('TECHNITIUM_ADMIN_PASSWORD=\"?([^\"\\n]+)\"?', '\\1') | first }}"
       no_log: true
 
@@ -146,64 +146,33 @@
       no_log: true
 
     ###########################################################################
-    # 8. FETCH PRODUCTION'S TSIG KEY FROM BITWARDEN BY NAME
-    # ns2 has no reason to generate its own TSIG key: TSIG-authenticated zone
-    # transfer needs both sides (ns1, the primary, and ns2, the secondary) to
-    # hold the SAME key for the handshake, so this fetches the one ns1
-    # already generated and wrote to Bitwarden -- same bws secret list +
-    # selectattr pattern used for staging in configure-technitium.yaml and
-    # for the OPNsense sync module in configure-technitium-apps.yaml. Never
-    # writes anything back -- ns2 only reads this secret, never generates or
-    # stores one.
-    ###########################################################################
-    - name: Fetch production's TSIG key from Bitwarden by name
-      shell: |
-        export BWS_ACCESS_TOKEN="{{ bw_token }}"
-        bws secret list "{{ bw_projectid }}" -o json
-      register: bw_secrets_raw
-      changed_when: false
-      no_log: true
-
-    - name: Extract TSIG name/algorithm/secret from the Bitwarden secret list
-      set_fact:
-        tsig_key_name: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-name') | map(attribute='value') | list | first) }}"
-        tsig_algorithm: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-algorithm') | map(attribute='value') | list | first) }}"
-        tsig_secret: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-secret') | map(attribute='value') | list | first) }}"
-      no_log: true
-
-    ###########################################################################
-    # 9. APPLY TSIG KEY TO TECHNITIUM
-    # Needed locally on ns2 too, not just ns1 -- TSIG-authenticated zone
-    # transfer requires both sides to hold the same key to sign/verify the
-    # transfer request.
-    ###########################################################################
-    - name: Apply TSIG key to Technitium settings
-      uri:
-        url: "{{ technitium_api }}/settings/set"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ technitium_api_key }}"
-        body_format: form-urlencoded
-        body:
-          tsigKeys: "{{ tsig_key_name }}|{{ tsig_secret }}|{{ tsig_algorithm }}"
-        status_code: 200
-      no_log: true
-
-    ###########################################################################
-    # 10. CREATE SECONDARY ZONES
+    # 8. CREATE SECONDARY ZONES
     # Field names verified directly against Technitium's own source
     # (DnsServerCore/WebServiceZonesApi.cs, CreateZoneAsync's
     # AuthZoneType.Secondary case) rather than guessed:
-    #   zone, type=Secondary, primaryNameServerAddresses, tsigKeyName
+    #   zone, type=Secondary, primaryNameServerAddresses
     # zoneTransferProtocol defaults to Tcp when omitted, which is what we
     # want here. Same three zone names configure-technitium.yaml already
     # imports as Primary zones on ns1 -- ns2 mirrors all three as Secondary.
     #
-    # No NOTIFY configuration needed on ns1's side: its zones/options default
-    # to notify="ZoneNameServers", which (per the zone's own NS records)
-    # picks up ns2 automatically once ns2's NS record is added to each zone
-    # file -- confirmed this is the live default via a real instance's
-    # zones/options/get, not assumed.
+    # Deliberately NOT passing tsigKeyName here, even though ns1 has a TSIG
+    # key configured globally -- confirmed live (created this same zone on
+    # ns2 both ways) that passing tsigKeyName makes the transfer fail
+    # silently: ns1's per-zone zoneTransferTsigKeyNames is empty (it was
+    # never granted for this key), so a TSIG-signed transfer request gets
+    # rejected even though the key exists in ns1's global tsigKeys list --
+    # global tsigKeys and per-zone zone-transfer TSIG authorization are two
+    # separate things in Technitium. Omitting tsigKeyName falls back to
+    # ns1's existing zoneTransfer policy (AllowOnlyZoneNameServers, the
+    # default) -- a plain IP-based check against the zone's own NS records,
+    # which already succeeds once ns2 is a real NS record for the zone.
+    # Standard, sufficient zone-transfer security without needing to also
+    # touch ns1's per-zone TSIG ACL for this.
+    #
+    # No NOTIFY configuration needed on ns1's side either: its zones/options
+    # default to notify="ZoneNameServers", which (per the zone's own NS
+    # records) picks up ns2 automatically -- confirmed live via a real
+    # instance's zones/options/get, not assumed.
     ###########################################################################
     - name: Create Secondary zones transferring from ns1
       loop:
@@ -213,19 +182,11 @@
       loop_control:
         label: "{{ item }}"
       uri:
-        url: "{{ technitium_api }}/zones/create?zone={{ item }}&type=Secondary&primaryNameServerAddresses={{ primary_dns_server_ip }}&tsigKeyName={{ tsig_key_name }}"
+        url: "{{ technitium_api }}/zones/create?zone={{ item }}&type=Secondary&primaryNameServerAddresses={{ primary_dns_server_ip }}"
         method: POST
         headers:
           Authorization: "Bearer {{ technitium_api_key }}"
         status_code: 200
-
-    ###########################################################################
-    # 11. RESTART SERVICE
-    ###########################################################################
-    - name: Restart Technitium DNS service
-      systemd:
-        name: dns.service
-        state: restarted
 
     - name: Confirm configuration applied
       debug:
