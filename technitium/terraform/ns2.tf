@@ -51,8 +51,16 @@ resource "proxmox_virtual_environment_vm" "technitium_ns2_temp" {
   }
 
   clone {
-    vm_id = var.cloudinit_template
-    full  = false
+    # node_name here is the SOURCE node (where template 9000 actually
+    # lives) -- required whenever it differs from this resource's own
+    # node_name (the target). Confirmed via the provider's own schema
+    # (terraform providers schema -json): clone.node_name is documented as
+    # "The name of the source node". Without it, Proxmox returns "unable to
+    # find configuration file for VM 9000 on node 'pve04'", since the
+    # template is only registered under target_node's node (pve02).
+    node_name = var.target_node
+    vm_id     = var.cloudinit_template
+    full      = false
   }
 
   operating_system {
