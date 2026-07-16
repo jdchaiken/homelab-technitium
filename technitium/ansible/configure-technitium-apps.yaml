@@ -229,8 +229,31 @@
           Authorization: "Bearer {{ technitium_session_token }}"
         status_code: 200
       register: querylogs_verify
-      failed_when: (querylogs_verify.json.config | from_json).maxLogDays != 30
       no_log: true
+
+    - name: Parse verify response (connectionString/password never leave this fact)
+      set_fact:
+        querylogs_verify_parsed: "{{ querylogs_verify.json.config | from_json }}"
+      no_log: true
+
+    # Deliberately not no_log: databaseName/enableLogging/maxLogDays aren't
+    # secrets, and printing them is what lets a failure here be diagnosed
+    # from the deploy output instead of guessed at blind, same as the last
+    # time this broke. connectionString (which does carry the password) is
+    # excluded on purpose -- never reference it here.
+    - name: Show non-secret Query Logs config fields for debugging
+      debug:
+        msg:
+          enableLogging: "{{ querylogs_verify_parsed.enableLogging }}"
+          maxLogDays: "{{ querylogs_verify_parsed.maxLogDays }}"
+          databaseName: "{{ querylogs_verify_parsed.databaseName }}"
+
+    - name: Assert Query Logs (PostgreSQL) config was actually applied
+      assert:
+        that:
+          - querylogs_verify_parsed.maxLogDays == 30
+        fail_msg: "Query Logs (PostgreSQL) config did not persist -- still at factory defaults (see fields printed above)."
+        success_msg: "Query Logs (PostgreSQL) config verified as applied."
 #    ###########################################################################
 #    # ADVANCED BLOCKING -- per-client/per-network blocking groups, each with
 #    # its own allow/block lists. No secrets involved. The config below is the
