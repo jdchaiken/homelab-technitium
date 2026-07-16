@@ -1,0 +1,57 @@
+#cloud-config
+hostname: ns2
+fqdn: ns2.example.com
+
+ssh_authorized_keys:
+  - ssh-ed25519 AAAA...yourkey your-email@example.com
+
+ssh_pwauth: true
+disable_root: false
+
+chpasswd:
+  expire: false
+
+packages:
+  - qemu-guest-agent
+  - python3
+  - python3-pip
+  - git
+  - curl
+  - wget
+  - ca-certificates
+  - ansible
+  - jq
+  - unzip
+
+timezone: America/New_York
+
+write_files:
+  - path: /opt/infra/.gitkeep
+    content: ""
+
+  ###########################################################################
+  # Technitium default admin password (required for API bootstrap)
+  ###########################################################################
+  - path: /etc/technitium/default-admin-password
+    content: |
+      admin
+    permissions: "0600"
+
+runcmd:
+  - apt-get update -y || true
+  - apt-get upgrade -y || true
+  - systemctl enable qemu-guest-agent || true
+  - systemctl start qemu-guest-agent || true
+
+  ###########################################################################
+  # Clone your GitOps repo
+  ###########################################################################
+  - git clone https://gitea.example.com/example-org/technitium.git /opt/infra/technitium || true
+
+  ###########################################################################
+  # bw.env is delivered by Terraform (file provisioner, over SSH) after this
+  # cloud-init run completes, then the Ansible playbooks below are triggered
+  # by Terraform's remote-exec provisioner. See technitium/terraform/ns2.tf.
+  ###########################################################################
+
+final_message: "Technitium DNS Server (ns2) base image initialized via cloud-init."

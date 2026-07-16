@@ -93,7 +93,7 @@ resource "proxmox_virtual_environment_vm" "technitium_ns2_temp" {
   initialization {
     datastore_id = "tank"
 
-    user_data_file_id = "tank:snippets/technitium-user.yaml"
+    user_data_file_id = "tank:snippets/technitium-user-ns2.yaml"
 
     user_account {
       username = "root"
