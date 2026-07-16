@@ -12,6 +12,8 @@ rules:
 
   # Cloud-init does not require '---'
   document-start:
+    ignore:
+      - technitium/cloud-init/local/*
     level: warning
 
   # Comments without a space are fine
