@@ -157,6 +157,54 @@
           name: "Weighted Round Robin"
           url: "https://download.technitium.com/dns/apps/WeightedRoundRobinApp-v5.zip"
         status_code: 200
+
+    ###########################################################################
+    # QUERY LOGS (POSTGRESQL) -- replaces the default query log storage with
+    # PostgreSQL. server/username/password/port/databaseName all come from
+    # ONE JSON-encoded bw.env secret (TECHNITIUM_QUERYLOGS_PG_CONFIG), same
+    # pattern as TECHNITIUM_SSO_CONFIG/OPNSENSE_API_CONFIG below -- keeps
+    # the whole connection config out of this file and out of bw.env as
+    # loose fragments, not just the password.
+    ###########################################################################
+    - name: Parse PostgreSQL config secret (single JSON secret, keys extracted from it)
+      set_fact:
+        querylogs_pg: "{{ (bw_env_raw | regex_search('TECHNITIUM_QUERYLOGS_PG_CONFIG=(.+)', '\\1') | first) | from_json }}"
+      no_log: true
+
+    - name: Install Query Logs (PostgreSQL) app
+      uri:
+        url: "{{ technitium_api }}/apps/downloadAndInstall"
+        method: POST
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ technitium_session_token }}"
+        body_format: form-urlencoded
+        body:
+          name: "Query Logs (PostgreSQL)"
+          url: "https://download.technitium.com/dns/apps/QueryLogsPostgreSqlApp-v1.2.1.zip"
+        status_code: 200
+
+    - name: Configure Query Logs (PostgreSQL) app
+      uri:
+        url: "{{ technitium_api }}/apps/config/set"
+        method: POST
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ technitium_session_token }}"
+        body_format: form-urlencoded
+        body:
+          name: "Query Logs (PostgreSQL)"
+          config: |
+            {
+              "enableLogging": true,
+              "maxQueueSize": 1000000,
+              "maxLogDays": 30,
+              "maxLogRecords": 0,
+              "databaseName": "{{ querylogs_pg.databaseName }}",
+              "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
+            }
+        status_code: 200
+      no_log: true
 #    ###########################################################################
 #    # ADVANCED BLOCKING -- per-client/per-network blocking groups, each with
 #    # its own allow/block lists. No secrets involved. The config below is the
@@ -332,52 +380,6 @@
 #                "protocol": "UDP",
 #                "enabled": false
 #              }
-#            }
-#        status_code: 200
-#      no_log: true
-#
-#    ###########################################################################
-#    # QUERY LOGS (POSTGRESQL) -- replaces the default query log storage with
-#    # PostgreSQL. server/username/password/port/databaseName all come from
-#    # ONE JSON-encoded bw.env secret (TECHNITIUM_QUERYLOGS_PG_CONFIG), same
-#    # pattern as TECHNITIUM_SSO_CONFIG/OPNSENSE_API_CONFIG below -- keeps
-#    # the whole connection config out of this file and out of bw.env as
-#    # loose fragments, not just the password.
-#    ###########################################################################
-#    - name: Parse PostgreSQL config secret (single JSON secret, keys extracted from it)
-#      set_fact:
-#        querylogs_pg: "{{ (bw_env_raw | regex_search('TECHNITIUM_QUERYLOGS_PG_CONFIG=(.+)', '\\1') | first) | from_json }}"
-#      no_log: true
-#
-#    - name: Install Query Logs (PostgreSQL) app
-#      uri:
-#        url: "{{ technitium_api }}/apps/downloadAndInstall"
-#        method: POST
-#        headers:
-#          Authorization: "Bearer {{ technitium_session_token }}"
-#        body_format: form-urlencoded
-#        body:
-#          name: "Query Logs (PostgreSQL)"
-#          url: "https://download.technitium.com/dns/apps/QueryLogsPostgreSqlApp-v1.2.1.zip"
-#        status_code: 200
-#
-#    - name: Configure Query Logs (PostgreSQL) app
-#      uri:
-#        url: "{{ technitium_api }}/apps/config/set"
-#        method: POST
-#        headers:
-#          Authorization: "Bearer {{ technitium_session_token }}"
-#        body_format: form-urlencoded
-#        body:
-#          name: "Query Logs (PostgreSQL)"
-#          config: |
-#            {
-#              "enableLogging": true,
-#              "maxQueueSize": 1000000,
-#              "maxLogDays": 30,
-#              "maxLogRecords": 0,
-#              "databaseName": "{{ querylogs_pg.databaseName }}",
-#              "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
 #            }
 #        status_code: 200
 #      no_log: true

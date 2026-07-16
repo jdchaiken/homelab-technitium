@@ -30,11 +30,11 @@ install: ## Run Technitium install playbook
 		$(ANSIBLE) technitium/ansible/install-technitium.yaml
 
 configure: ## Run Technitium configure playbook
-		$(ANSIBLE) configure-technitium.yaml
+		$(ANSIBLE) technitium/ansible/configure-technitium.yaml
 
 rebuild: ## Run full Ansible rebuild (install + configure)
-		$(ANSIBLE) install-technitium.yaml
-		$(ANSIBLE) configure-technitium.yaml
+		$(ANSIBLE) technitium/ansible/install-technitium.yaml
+		$(ANSIBLE) technitium/ansible/configure-technitium.yaml
 
 ###############################################################################
 # DNS Zone Validation
