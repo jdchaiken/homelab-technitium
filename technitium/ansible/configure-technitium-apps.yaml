@@ -30,7 +30,9 @@
 #
 # Secrets used below, and the bw.env keys they read (add these to bw.env
 # only for the feature(s) you actually enable):
-#   TECHNITIUM_QUERYLOGS_PG_PASSWORD   -- Query Logs (PostgreSQL) DB password
+#   TECHNITIUM_QUERYLOGS_PG_CONFIG     -- single JSON secret for Query Logs'
+#                                          PostgreSQL connection, see that
+#                                          section below for its shape
 #   TECHNITIUM_FAILOVER_SMTP_PASSWORD  -- Failover app's SMTP alert password
 #   TECHNITIUM_LOGEXPORTER_HTTP_TOKEN  -- Log Exporter's HTTP sink auth token
 #   TECHNITIUM_SSO_CONFIG              -- single JSON secret for SSO, see the
@@ -336,10 +338,18 @@
 #
 #    ###########################################################################
 #    # QUERY LOGS (POSTGRESQL) -- replaces the default query log storage with
-#    # PostgreSQL. host/port/user/database below are placeholders to set per
-#    # environment, not secrets -- the connectionString's Password= is the
-#    # real secret and comes from bw.env, never hardcoded.
+#    # PostgreSQL. server/username/password/port all come from ONE JSON-
+#    # encoded bw.env secret (TECHNITIUM_QUERYLOGS_PG_CONFIG), same pattern
+#    # as TECHNITIUM_SSO_CONFIG/OPNSENSE_API_CONFIG below -- keeps the whole
+#    # connection string out of this file and out of bw.env as loose
+#    # fragments, not just the password. databaseName stays a plain,
+#    # non-secret setting to change per environment directly here.
 #    ###########################################################################
+#    - name: Parse PostgreSQL config secret (single JSON secret, keys extracted from it)
+#      set_fact:
+#        querylogs_pg: "{{ (bw_env_raw | regex_search('TECHNITIUM_QUERYLOGS_PG_CONFIG=(.+)', '\\1') | first) | from_json }}"
+#      no_log: true
+#
 #    - name: Install Query Logs (PostgreSQL) app
 #      uri:
 #        url: "{{ technitium_api }}/apps/downloadAndInstall"
@@ -368,7 +378,7 @@
 #              "maxLogDays": 30,
 #              "maxLogRecords": 0,
 #              "databaseName": "DnsQueryLogs",
-#              "connectionString": "Server=127.0.0.1; Port=5432; Username=technitium; Password={{ querylogs_pg_password }};"
+#              "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
 #            }
 #        status_code: 200
 #      no_log: true
