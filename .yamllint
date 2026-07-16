@@ -12,9 +12,14 @@ rules:
 
   # Cloud-init does not require '---'
   document-start:
-    ignore:
-      - technitium/cloud-init/local/*
     level: warning
+    ignore: |
+      technitium/cloud-init/local/*
+
+  comments-indentation:
+    level: warning
+    ignore: |
+      technitium/ansible/configure-technitium-apps.yaml
 
   # Comments without a space are fine
   comments:
