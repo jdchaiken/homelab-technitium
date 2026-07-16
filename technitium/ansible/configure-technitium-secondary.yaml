@@ -146,14 +146,22 @@
       no_log: true
 
     ###########################################################################
-    # 8. CREATE SECONDARY ZONES
+    # 8. CREATE SECONDARY FORWARDER ZONES
     # Field names verified directly against Technitium's own source
     # (DnsServerCore/WebServiceZonesApi.cs, CreateZoneAsync's
-    # AuthZoneType.Secondary case) rather than guessed:
-    #   zone, type=Secondary, primaryNameServerAddresses
+    # AuthZoneType.SecondaryForwarder case) rather than guessed:
+    #   zone, type=SecondaryForwarder, primaryNameServerAddresses
     # zoneTransferProtocol defaults to Tcp when omitted, which is what we
-    # want here. Same three zone names configure-technitium.yaml already
-    # imports as Primary zones on ns1 -- ns2 mirrors all three as Secondary.
+    # want here. Same three zone names configure-technitium.yaml now
+    # imports as Forwarder (Conditional Forwarder) zones on ns1 -- ns2 must
+    # mirror them as SecondaryForwarder, not plain Secondary: a plain
+    # Secondary zone transfers ns1's records fine but has no concept of the
+    # FWD record, so ns2 would silently lose the split-DNS fallthrough
+    # behavior entirely (NXDOMAIN for anything not explicitly in the zone,
+    # same as before this zone type existed) despite the transfer itself
+    # succeeding. Not live-tested as of this writing -- validate via
+    # `make deploy-staging` alongside ns1's Forwarder zone change before
+    # trusting this on production.
     #
     # Deliberately NOT passing tsigKeyName here, even though ns1 has a TSIG
     # key configured globally -- confirmed live (created this same zone on
@@ -166,15 +174,17 @@
     # ns1's existing zoneTransfer policy (AllowOnlyZoneNameServers, the
     # default) -- a plain IP-based check against the zone's own NS records,
     # which already succeeds once ns2 is a real NS record for the zone.
-    # Standard, sufficient zone-transfer security without needing to also
-    # touch ns1's per-zone TSIG ACL for this.
+    # This default is unchanged by the Forwarder zone conversion: Forwarder
+    # zones only disallow *explicitly setting* AllowOnlyZoneNameServers via
+    # the API, they don't change what a freshly created zone's transfer
+    # policy defaults to, and this repo never explicitly sets it either way.
     #
     # No NOTIFY configuration needed on ns1's side either: its zones/options
     # default to notify="ZoneNameServers", which (per the zone's own NS
     # records) picks up ns2 automatically -- confirmed live via a real
     # instance's zones/options/get, not assumed.
     ###########################################################################
-    - name: Create Secondary zones transferring from ns1
+    - name: Create Secondary Forwarder zones transferring from ns1
       loop:
         - example.com
         - example.net
@@ -182,7 +192,7 @@
       loop_control:
         label: "{{ item }}"
       uri:
-        url: "{{ technitium_api }}/zones/create?zone={{ item }}&type=Secondary&primaryNameServerAddresses={{ primary_dns_server_ip }}"
+        url: "{{ technitium_api }}/zones/create?zone={{ item }}&type=SecondaryForwarder&primaryNameServerAddresses={{ primary_dns_server_ip }}"
         method: POST
         headers:
           Authorization: "Bearer {{ technitium_api_key }}"
@@ -190,4 +200,4 @@
 
     - name: Confirm configuration applied
       debug:
-        msg: "Technitium configured as a Secondary DNS server (ns2), transferring example.com/example.net/storage.example.com from {{ primary_dns_server_ip }}."
+        msg: "Technitium configured as a Secondary Forwarder DNS server (ns2), transferring example.com/example.net/storage.example.com from {{ primary_dns_server_ip }}."

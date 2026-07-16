@@ -215,6 +215,10 @@ update-zones: validate-zones ## Update DNS Zone SOA
 	@echo "$(BLUE)Updating Zone SOA$(RESET)"
 	@cd dns && ./scripts/update-serials.sh
 
+push-zones: update-zones ## Push zone record changes to the live ns1 via API (no VM rebuild), then commit + push to git
+	@echo "$(BLUE)Pushing zone changes to live Technitium and git...$(RESET)"
+	@dns/scripts/push-zones.sh
+
 bootstrap:
 		ansible-playbook -i ansible/inventory/technitium.ini ansible/technitium-bootstrap.yaml
 
@@ -223,4 +227,4 @@ bootstrap:
 ###############################################################################
 .PHONY: install configure rebuild validate-zones pull sync-snippets deploy \
 		verify-dev install-dev scan-secrets verify-secrets lint help \
-		install-hooks test-hooks verify-hooks update-zones
+		install-hooks test-hooks verify-hooks update-zones push-zones

@@ -318,16 +318,36 @@
       no_log: true
 
     ###########################################################################
-    # 11. CREATE DNS ZONES FROM ZONE FILES
+    # 11. CREATE DNS ZONES FROM ZONE FILES (as Conditional Forwarder zones)
     # zones/import only adds records into a zone that already exists (its
     # "zone" param is the domain name, not the file to import -- confirmed
     # against a live instance, where it returned "No such zone was found").
-    # Creating a Primary zone directly from a zone file is done via
-    # zones/create with the file sent as multipart field "zoneFile". The
-    # part MUST carry a filename (dict form below) -- a plain string value
-    # gets sent as a nameless multipart field, which Technitium silently
-    # accepts but ignores, creating an empty zone with only default NS/SOA
-    # records instead of importing the file's contents.
+    # Creating a zone directly from a zone file is done via zones/create
+    # with the file sent as multipart field "zoneFile". The part MUST carry
+    # a filename (dict form below) -- a plain string value gets sent as a
+    # nameless multipart field, which Technitium silently accepts but
+    # ignores, creating an empty zone with only default NS/SOA records
+    # instead of importing the file's contents.
+    #
+    # type=Forwarder (not Primary) -- Technitium's own name for this is
+    # "Conditional Forwarder": the zone still answers every record in the
+    # zone file authoritatively, but any name that ISN'T explicitly defined
+    # (e.g. home.example.com, hosted externally) falls through to the FWD
+    # record's target instead of returning NXDOMAIN. A Primary zone can't do
+    # this -- being authoritative for a zone means NXDOMAIN is final for
+    # anything not in it; the global `forwarders` setting above (task 7)
+    # never gets consulted for a zone this server already hosts. Confirmed
+    # against Technitium's own source (DnsServerCore/Dns/Zones/
+    # ForwarderZone.cs, DnsServer.cs's ConditionalForwarderResolveAsync) --
+    # not live-tested end-to-end as of this writing; validate via
+    # `make deploy-staging` before trusting this on production zones.
+    #
+    # zones/create with type=Forwarder AND a zoneFile attached in the same
+    # call creates the FWD record, then immediately DELETES it again as
+    # part of the import step (Technitium clears the zone's existing NS/FWD
+    # record before importing, same as it clears NS for a fresh Primary
+    # zone) -- confirmed in WebServiceZonesApi.cs's CreateZoneAsync. Task
+    # 11a below re-adds the FWD record afterward for that reason.
     ###########################################################################
     - name: Create Technitium zones from zone files
       loop:
@@ -336,8 +356,10 @@
         - storage.example.com.zone
       loop_control:
         label: "{{ item }}"
+      vars:
+        zone_name: "{{ item | regex_replace('\\.zone$', '') }}"
       uri:
-        url: "{{ technitium_api }}/zones/create?zone={{ item | regex_replace('\\.zone$', '') }}&type=Primary"
+        url: "{{ technitium_api }}/zones/create?zone={{ zone_name }}&type=Forwarder&forwarder={{ upstream_resolver_ip }}&protocol=Udp&dnssecValidation=false"
         method: POST
         headers:
           Authorization: "Bearer {{ technitium_api_key }}"
@@ -347,6 +369,23 @@
             filename: "{{ item }}"
             content: "{{ lookup('file', zone_dir + '/' + item) }}"
             mime_type: text/plain
+        status_code: 200
+
+    ###########################################################################
+    # 11a. RE-ADD THE FWD RECORD (zone-file import above deleted it)
+    ###########################################################################
+    - name: Re-add FWD record for split-DNS forwarding after zone file import
+      loop:
+        - example.com
+        - example.net
+        - storage.example.com
+      loop_control:
+        label: "{{ item }}"
+      uri:
+        url: "{{ technitium_api }}/zones/records/add?zone={{ item }}&domain={{ item }}&type=FWD&protocol=Udp&forwarder={{ upstream_resolver_ip }}&dnssecValidation=false"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ technitium_api_key }}"
         status_code: 200
 
     ###########################################################################
