@@ -338,12 +338,11 @@
 #
 #    ###########################################################################
 #    # QUERY LOGS (POSTGRESQL) -- replaces the default query log storage with
-#    # PostgreSQL. server/username/password/port all come from ONE JSON-
-#    # encoded bw.env secret (TECHNITIUM_QUERYLOGS_PG_CONFIG), same pattern
-#    # as TECHNITIUM_SSO_CONFIG/OPNSENSE_API_CONFIG below -- keeps the whole
-#    # connection string out of this file and out of bw.env as loose
-#    # fragments, not just the password. databaseName stays a plain,
-#    # non-secret setting to change per environment directly here.
+#    # PostgreSQL. server/username/password/port/databaseName all come from
+#    # ONE JSON-encoded bw.env secret (TECHNITIUM_QUERYLOGS_PG_CONFIG), same
+#    # pattern as TECHNITIUM_SSO_CONFIG/OPNSENSE_API_CONFIG below -- keeps
+#    # the whole connection config out of this file and out of bw.env as
+#    # loose fragments, not just the password.
 #    ###########################################################################
 #    - name: Parse PostgreSQL config secret (single JSON secret, keys extracted from it)
 #      set_fact:
@@ -377,7 +376,7 @@
 #              "maxQueueSize": 1000000,
 #              "maxLogDays": 30,
 #              "maxLogRecords": 0,
-#              "databaseName": "DnsQueryLogs",
+#              "databaseName": "{{ querylogs_pg.databaseName }}",
 #              "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
 #            }
 #        status_code: 200

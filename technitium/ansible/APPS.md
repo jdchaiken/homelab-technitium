@@ -77,13 +77,13 @@ Ships query logs to file, HTTP, or syslog sinks.
 Replaces Technitium's default query log storage with PostgreSQL.
 
 - **Secrets needed:** `TECHNITIUM_QUERYLOGS_PG_CONFIG` — a single JSON
-  secret (`server`, `username`, `password`, `port`) instead of separate
-  keys, same reasoning as `TECHNITIUM_SSO_CONFIG`/`OPNSENSE_API_CONFIG` —
-  the whole connection string stays out of this file and out of bw.env as
-  loose fragments, not just the password.
-- **Config:** `databaseName` in the example is a placeholder to set per
-  environment (not a secret) — everything else in the connection string
-  comes from the JSON secret above.
+  secret (`server`, `username`, `password`, `port`, `databaseName`) instead
+  of separate keys, same reasoning as
+  `TECHNITIUM_SSO_CONFIG`/`OPNSENSE_API_CONFIG` — the whole connection
+  config stays out of this file and out of bw.env as loose fragments, not
+  just the password.
+- **Config:** nothing left to set directly in the scaffold — the entire
+  connection (including `databaseName`) comes from the JSON secret above.
 
 ## SSO (OpenID Connect)
 
