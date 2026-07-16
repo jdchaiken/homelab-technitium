@@ -231,9 +231,17 @@
       register: querylogs_verify
       no_log: true
 
+    # apps/config/get wraps its field under "response" (unlike /user/login
+    # and /user/createToken, which return "token" flat) -- confirmed live:
+    # {"response": {"config": "..."}, "server": ..., "status": "ok"}.
+    # Reading .json.config directly (no .response) crashes with "object of
+    # type 'dict' has no attribute 'config'" since no such top-level key
+    # exists -- this was the actual cause of every previous failure here,
+    # not a real config problem. The config was confirmed live to already
+    # be applying correctly; this task's own bug was what broke the deploy.
     - name: Parse verify response (connectionString/password never leave this fact)
       set_fact:
-        querylogs_verify_parsed: "{{ querylogs_verify.json.config | from_json }}"
+        querylogs_verify_parsed: "{{ querylogs_verify.json.response.config | from_json }}"
       no_log: true
 
     # Deliberately not no_log: databaseName/enableLogging/maxLogDays aren't
