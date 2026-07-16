@@ -394,7 +394,7 @@
         body:
           zone: "{{ item }}"
           update: "UseSpecifiedNetworkACL"
-          updateNetworkACL: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+          updateNetworkACL: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17,10.0.0.0/8"
           updateSecurityPolicies: "{{ tsig_key_name }}|*.{{ item }}|A,AAAA,CNAME,TXT,SRV"
         status_code: 200
 
