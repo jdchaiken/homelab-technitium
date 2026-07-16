@@ -193,6 +193,14 @@ resource "null_resource" "ns2_cutover" {
   # on the node actually hosting the VM (unlike qm config, which reads
   # pmxcfs's cluster-wide shared config and works from any node -- that's
   # why VMID allocation/detection above stay on pm_node).
+  #
+  # The qm commands below reference proxmox_virtual_environment_vm.technitium_ns2_temp.vm_id
+  # (the resource's actual stored ID), NOT local.ns2_new_vmid -- see the matching comment
+  # on null_resource.cutover in main.tf for why: local.ns2_new_vmid is re-derived from
+  # next-vmid.sh on every apply and drifts to a new, nonexistent ID on any retry that
+  # doesn't also replace the VM resource, causing a phantom-vmid "Configuration file ...
+  # does not exist" failure. vm_id is ignore_changes-protected below, so referencing the
+  # resource attribute here always reads the real ID from state.
   provisioner "local-exec" {
     command = <<-EOT
       set -e
@@ -207,14 +215,14 @@ resource "null_resource" "ns2_cutover" {
       PROD_IP="$(echo "${var.ns2_prod_vm_ip}" | cut -d'/' -f1)"
       CIDR="$(echo "${var.ns2_prod_vm_ip}" | cut -d'/' -f2)"
 
-      echo "Setting new ns2 VM ${local.ns2_new_vmid} to production IP $PROD_IP/$CIDR..."
-      ssh root@${var.ns2_target_node} "qm set ${local.ns2_new_vmid} --ipconfig0 ip=$PROD_IP/$CIDR,gw=${var.gateway_ip}"
+      echo "Setting new ns2 VM ${proxmox_virtual_environment_vm.technitium_ns2_temp.vm_id} to production IP $PROD_IP/$CIDR..."
+      ssh root@${var.ns2_target_node} "qm set ${proxmox_virtual_environment_vm.technitium_ns2_temp.vm_id} --ipconfig0 ip=$PROD_IP/$CIDR,gw=${var.gateway_ip}"
 
-      echo "Renaming new ns2 VM ${local.ns2_new_vmid} to ${var.ns2_prod_vm_name}..."
-      ssh root@${var.ns2_target_node} "qm set ${local.ns2_new_vmid} --name ${var.ns2_prod_vm_name}"
+      echo "Renaming new ns2 VM ${proxmox_virtual_environment_vm.technitium_ns2_temp.vm_id} to ${var.ns2_prod_vm_name}..."
+      ssh root@${var.ns2_target_node} "qm set ${proxmox_virtual_environment_vm.technitium_ns2_temp.vm_id} --name ${var.ns2_prod_vm_name}"
 
-      echo "Rebooting new ns2 VM ${local.ns2_new_vmid}..."
-      ssh root@${var.ns2_target_node} "qm reboot ${local.ns2_new_vmid}"
+      echo "Rebooting new ns2 VM ${proxmox_virtual_environment_vm.technitium_ns2_temp.vm_id}..."
+      ssh root@${var.ns2_target_node} "qm reboot ${proxmox_virtual_environment_vm.technitium_ns2_temp.vm_id}"
     EOT
   }
 }

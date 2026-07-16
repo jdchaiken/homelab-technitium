@@ -184,6 +184,20 @@
           url: "https://download.technitium.com/dns/apps/QueryLogsPostgreSqlApp-v1.2.1.zip"
         status_code: 200
 
+    # First real end-to-end run of this task (2026-07-16) installed the app
+    # but left it on its factory-default config (enableLogging: false,
+    # maxLogDays: 0, placeholder connection string) even though config/set
+    # returned HTTP 200 -- consistent with Technitium's own SetAppConfigAsync
+    # treating an empty/not-yet-ready config submission as "reset to
+    # default" rather than erroring loudly. Root cause not yet confirmed
+    # (possibly a load race right after downloadAndInstall returns). Pause
+    # + a hard verification step below convert a repeat of this into a loud
+    # playbook failure instead of a silent no-op, and rule the race theory
+    # in or out on the next real deploy.
+    - name: Wait for the newly installed app to finish loading before configuring it
+      ansible.builtin.pause:
+        seconds: 5
+
     - name: Configure Query Logs (PostgreSQL) app
       uri:
         url: "{{ technitium_api }}/apps/config/set"
@@ -204,6 +218,18 @@
               "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
             }
         status_code: 200
+      no_log: true
+
+    - name: Verify Query Logs (PostgreSQL) config actually persisted (maxLogDays 30 vs factory default 0)
+      uri:
+        url: "{{ technitium_api }}/apps/config/get?name=Query%20Logs%20(PostgreSQL)"
+        method: GET
+        validate_certs: false
+        headers:
+          Authorization: "Bearer {{ technitium_session_token }}"
+        status_code: 200
+      register: querylogs_verify
+      failed_when: (querylogs_verify.json.config | from_json).maxLogDays != 30
       no_log: true
 #    ###########################################################################
 #    # ADVANCED BLOCKING -- per-client/per-network blocking groups, each with

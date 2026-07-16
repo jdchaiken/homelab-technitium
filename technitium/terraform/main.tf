@@ -276,6 +276,16 @@ resource "null_resource" "cutover" {
 
   depends_on = [null_resource.wait_for_dns]
 
+  # The qm commands below reference proxmox_virtual_environment_vm.technitium_temp.vm_id
+  # (the resource's actual stored ID), NOT local.new_vmid. local.new_vmid comes from the
+  # next-vmid.sh data source, which is re-run on every apply and returns a NEW, higher
+  # number once the real VM already exists -- so on any apply that retries this cutover
+  # without also replacing the VM resource (e.g. a prior attempt failed here and got
+  # re-run), local.new_vmid would silently point at a VM ID that was never created,
+  # producing "Configuration file ... does not exist" from a phantom vmid. vm_id is
+  # `ignore_changes`-protected below, so referencing it here always reads the real,
+  # already-created ID from state instead of re-deriving a stale one.
+  #
   # Stopping the old VM here (rather than leaving it to Terraform's own
   # create_before_destroy teardown) is required, not optional: that native
   # teardown only happens after every dependent of this resource finishes,
@@ -299,14 +309,14 @@ resource "null_resource" "cutover" {
       PROD_IP="$(echo "${var.prod_vm_ip}" | cut -d'/' -f1)"
       CIDR="$(echo "${var.prod_vm_ip}" | cut -d'/' -f2)"
 
-      echo "Setting new VM ${local.new_vmid} to production IP $PROD_IP/$CIDR..."
-      ssh root@${var.pm_node} "qm set ${local.new_vmid} --ipconfig0 ip=$PROD_IP/$CIDR,gw=${var.gateway_ip}"
+      echo "Setting new VM ${proxmox_virtual_environment_vm.technitium_temp.vm_id} to production IP $PROD_IP/$CIDR..."
+      ssh root@${var.pm_node} "qm set ${proxmox_virtual_environment_vm.technitium_temp.vm_id} --ipconfig0 ip=$PROD_IP/$CIDR,gw=${var.gateway_ip}"
 
-      echo "Renaming new VM ${local.new_vmid} to ${var.prod_vm_name}..."
-      ssh root@${var.pm_node} "qm set ${local.new_vmid} --name ${var.prod_vm_name}"
+      echo "Renaming new VM ${proxmox_virtual_environment_vm.technitium_temp.vm_id} to ${var.prod_vm_name}..."
+      ssh root@${var.pm_node} "qm set ${proxmox_virtual_environment_vm.technitium_temp.vm_id} --name ${var.prod_vm_name}"
 
-      echo "Rebooting new VM ${local.new_vmid}..."
-      ssh root@${var.pm_node} "qm reboot ${local.new_vmid}"
+      echo "Rebooting new VM ${proxmox_virtual_environment_vm.technitium_temp.vm_id}..."
+      ssh root@${var.pm_node} "qm reboot ${proxmox_virtual_environment_vm.technitium_temp.vm_id}"
     EOT
   }
 }
