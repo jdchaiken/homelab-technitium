@@ -38,7 +38,17 @@ jobs:
           HASHICORP_REPO="deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
           echo "$HASHICORP_REPO" | sudo tee /etc/apt/sources.list.d/hashicorp.list
           sudo apt-get update
-          sudo apt-get install -y bind9-utils shellcheck yamllint terraform
+          sudo apt-get install -y bind9-utils shellcheck yamllint terraform git-secrets
+
+      # A fresh CI checkout never runs `make install-hooks` the way a
+      # developer's local clone would, so .git/hooks/* don't exist yet --
+      # verify-hooks.sh was failing here on every run once the apt fix above
+      # let it get this far (previously masked entirely by that earlier
+      # failure). git-secrets must be installed (apt, above) before this,
+      # since install-hooks itself calls `git secrets --install`.
+      - name: Install Git hooks
+        run: |
+          make install-hooks
 
       - name: Verify Git hook integrity
         run: |
