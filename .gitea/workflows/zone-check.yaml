@@ -57,7 +57,12 @@ jobs:
 
       - name: Run detect-secrets baseline validation
         run: |
-          pip install detect-secrets
+          # Ubuntu 24.04's Python enforces PEP 668 (externally-managed-
+          # environment) -- a plain `pip install` refuses to touch the
+          # system Python. --break-system-packages is the standard escape
+          # hatch for exactly this case (an ephemeral CI container with no
+          # reason to preserve a "clean" system Python).
+          pip install --break-system-packages detect-secrets
           detect-secrets-hook --baseline .detect-secrets.json
 
       - name: Run git-secrets scan
