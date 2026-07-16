@@ -236,16 +236,45 @@
 
     ###########################################################################
     # 9. STORE API KEY IN BITWARDEN
-    # NOTE: verify `bws secret create` arguments against the bws CLI version
-    # pinned in install-technitium.yaml (currently v2.1.0) before relying on
-    # this in production - the flag/positional syntax has changed across
-    # bws releases.
+    # bws secret create is NOT idempotent -- it makes a new dated entry
+    # every single run, with no update-if-exists behavior. Every rebuild was
+    # leaving the previous run's entry behind, so the project accumulated a
+    # new duplicate of every key on every deploy (confirmed live: 10 copies
+    # each of technitium-ansible-api-key and the three externaldns-tsig-*
+    # keys after 10 rebuilds). upsert_secret below looks up all existing
+    # entries for the key by name (bws secret list, filtered client-side --
+    # there's no server-side "get by name" in this bws CLI version, 2.1.0),
+    # updates the first one in place with `bws secret edit --value`, and
+    # deletes any others -- which also self-heals the existing duplicate
+    # pileup down to one entry the next time this runs, no separate cleanup
+    # script needed. Argument syntax for create/edit/delete verified live
+    # against the installed bws CLI (`bws secret <cmd> --help`), not guessed.
     ###########################################################################
     - name: Store Technitium API key in Bitwarden
       when: not (is_staging | default(false) | bool)
       shell: |
         export BWS_ACCESS_TOKEN="{{ bw_token }}"
-        bws secret create "technitium-ansible-api-key" "{{ technitium_api_key }}" "{{ bw_projectid }}"
+
+        upsert_secret() {
+          local key="$1" value="$2"
+          local ids
+          ids=$(bws secret list "{{ bw_projectid }}" -o json | jq -r --arg key "$key" '.[] | select(.key == $key) | .id')
+
+          if [ -z "$ids" ]; then
+            bws secret create "$key" "$value" "{{ bw_projectid }}"
+          else
+            local first_id rest
+            first_id=$(echo "$ids" | head -1)
+            bws secret edit --value "$value" "$first_id"
+            rest=$(echo "$ids" | tail -n +2)
+            if [ -n "$rest" ]; then
+              # shellcheck disable=SC2086
+              bws secret delete $rest
+            fi
+          fi
+        }
+
+        upsert_secret "technitium-ansible-api-key" "{{ technitium_api_key }}"
       args:
         executable: /bin/bash
       no_log: true
@@ -254,14 +283,36 @@
     # 10. STORE TSIG VALUES IN BITWARDEN
     # Staging skips this entirely -- it reused production's existing key
     # above rather than generating a new one, so there's nothing new to store.
+    # Same upsert_secret pattern as task 9 (redefined here since each
+    # Ansible shell: task is its own fresh bash process).
     ###########################################################################
     - name: Store TSIG values in Bitwarden
       when: not (is_staging | default(false) | bool)
       shell: |
         export BWS_ACCESS_TOKEN="{{ bw_token }}"
-        bws secret create "externaldns-tsig-name" "{{ tsig_key_name }}" "{{ bw_projectid }}"
-        bws secret create "externaldns-tsig-algorithm" "{{ tsig_algorithm }}" "{{ bw_projectid }}"
-        bws secret create "externaldns-tsig-secret" "{{ tsig_secret }}" "{{ bw_projectid }}"
+
+        upsert_secret() {
+          local key="$1" value="$2"
+          local ids
+          ids=$(bws secret list "{{ bw_projectid }}" -o json | jq -r --arg key "$key" '.[] | select(.key == $key) | .id')
+
+          if [ -z "$ids" ]; then
+            bws secret create "$key" "$value" "{{ bw_projectid }}"
+          else
+            local first_id rest
+            first_id=$(echo "$ids" | head -1)
+            bws secret edit --value "$value" "$first_id"
+            rest=$(echo "$ids" | tail -n +2)
+            if [ -n "$rest" ]; then
+              # shellcheck disable=SC2086
+              bws secret delete $rest
+            fi
+          fi
+        }
+
+        upsert_secret "externaldns-tsig-name" "{{ tsig_key_name }}"
+        upsert_secret "externaldns-tsig-algorithm" "{{ tsig_algorithm }}"
+        upsert_secret "externaldns-tsig-secret" "{{ tsig_secret }}"
       args:
         executable: /bin/bash
       no_log: true
