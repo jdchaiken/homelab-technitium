@@ -1,9 +1,10 @@
 # Optional Technitium Apps & Integrations
 
 Reference for every module in [`configure-technitium-apps.yaml`](configure-technitium-apps.yaml).
-**Auto PTR and Weighted Round Robin are live** — wired into
-`technitium/terraform/main.tf`'s remote-exec chain (right after
-`configure-technitium-tls.yaml`), so they install on every rebuild.
+**Auto PTR, Weighted Round Robin, Query Logs (PostgreSQL), and the OPNsense
+TSIG sync are enabled** — wired into `technitium/terraform/main.tf`'s (and
+`ns2.tf`'s) remote-exec chain right after `configure-technitium-tls.yaml`,
+so they run on every rebuild.
 Everything else in the file is still a **commented-out scaffold**. To
 enable another module: strip the leading `#` from its lines, fill in the
 placeholder values, add any secrets it needs to `bw.env` (see
@@ -104,7 +105,7 @@ call to `/api/admin/sso/set`. Works with any standard OIDC provider
   SSO specifically — double check against the web console
   (Administration > SSO) before relying on it.
 
-## OPNsense TSIG Sync
+## OPNsense TSIG Sync — enabled, not yet live-verified
 
 Not a Technitium feature — configures **OPNsense's** Kea DHCP DDNS settings
 so DHCP leases get registered into Technitium via authenticated RFC2136
@@ -141,3 +142,10 @@ hardcoded secret ID would go stale the next time the key rotates, since
   4. Kea's TSIG/DDNS support in OPNsense is relatively recent history —
      if your OPNsense version predates it, none of this exists in the API
      at all.
+
+The Ansible task block itself is uncommented and will run on the next
+rebuild as soon as `OPNSENSE_API_CONFIG` is set in `bw.env` with real
+values — but the four points above are still only verified against
+OPNsense's own source, not against a live run. Watch the first real deploy
+closely (or run this playbook by hand against a non-prod OPNsense first,
+if one's available) before trusting it against production DHCP subnets.
