@@ -350,6 +350,55 @@
         status_code: 200
 
     ###########################################################################
+    # 11b. ENABLE DYNAMIC UPDATES (RFC2136) ON EACH ZONE
+    # Zones default to update="Deny" -- the TSIG key existing globally
+    # (task 9) is necessary but not sufficient; each zone also needs its own
+    # update policy opened, or every dynamic update (from ExternalDNS, Kea
+    # DHCP, ...) gets rejected before TSIG is even checked. Endpoint and
+    # every field below verified directly against Technitium's own source
+    # (DnsServerCore/WebServiceZonesApi.cs SetZoneOptions, and the update-
+    # request handling in DnsServerCore/Dns/DnsServer.cs), not guessed:
+    #
+    #   - update=UseSpecifiedNetworkACL + updateNetworkACL: this is a
+    #     coarse, IP-based gate checked BEFORE TSIG is considered at all --
+    #     same internal ranges already used for recursionNetworkACL and
+    #     zoneTransferAllowedNetworks. An update from outside these ranges
+    #     is refused even with a valid TSIG signature.
+    #   - updateSecurityPolicies: pipe-separated triples of
+    #     tsigKeyName|domain|types, repeated. domain supports a "*.zone"
+    #     prefix for wildcard matching at update time (confirmed in
+    #     DnsServer.cs's policy-matching loop) -- covers every dynamically-
+    #     named record ExternalDNS/Kea create (e.g. n8n.example.com)
+    #     without enumerating hostnames that don't exist yet. Scoped to the
+    #     record types those two systems actually write; deliberately
+    #     excludes NS/SOA/DNSKEY etc.
+    #
+    # Secondary zones (ns2) intentionally don't get this: updateSecurity
+    # Policies is only valid on Primary/Forwarder zones in Technitium --
+    # updates belong on the primary and reach ns2 via zone transfer, never
+    # directly.
+    ###########################################################################
+    - name: Enable dynamic updates (RFC2136) on each zone
+      loop:
+        - example.com
+        - example.net
+        - storage.example.com
+      loop_control:
+        label: "{{ item }}"
+      uri:
+        url: "{{ technitium_api }}/zones/options/set"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ technitium_api_key }}"
+        body_format: form-urlencoded
+        body:
+          zone: "{{ item }}"
+          update: "UseSpecifiedNetworkACL"
+          updateNetworkACL: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+          updateSecurityPolicies: "{{ tsig_key_name }}|*.{{ item }}|A,AAAA,CNAME,TXT,SRV"
+        status_code: 200
+
+    ###########################################################################
     # 12. RESTART SERVICE
     ###########################################################################
     - name: Restart Technitium DNS service
