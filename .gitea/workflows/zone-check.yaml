@@ -13,6 +13,11 @@ on:
       - "dns/scripts/**"
       - "Makefile"
       - "hooks/**"
+  # Lets this run on-demand against the current branch tip (Gitea's "re-run"
+  # button re-executes the workflow as defined at the ORIGINAL commit, not
+  # the latest version -- there was otherwise no way to validate a fix to
+  # this file itself without an unrelated push to one of the paths above).
+  workflow_dispatch:
 
 jobs:
   zone-check:
