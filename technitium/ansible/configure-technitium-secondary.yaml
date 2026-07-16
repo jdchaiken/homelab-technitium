@@ -128,6 +128,12 @@
     # trust loopback.
     ###########################################################################
     - name: Configure resolver and logging
+      # dnssecValidation: false -- see the matching comment on ns1's
+      # "Configure resolver, ACLs, and logging" task in
+      # configure-technitium.yaml for why: Technitium's own DNSSEC
+      # validator broke split-DNS conditional forwarding outright when
+      # this was true, confirmed live, regardless of the per-FWD-record
+      # dnssecValidation=false already set on each zone.
       uri:
         url: "{{ technitium_api }}/settings/set"
         method: POST
@@ -137,7 +143,7 @@
         body:
           dnsServerDomain: "{{ dns_hostname }}"
           forwarders: "172.16.100.1"
-          dnssecValidation: true
+          dnssecValidation: false
           recursion: "UseSpecifiedNetworkACL"
           recursionNetworkACL: "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
           zoneTransferAllowedNetworks: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"

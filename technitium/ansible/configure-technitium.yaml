@@ -155,6 +155,21 @@
     # tsig_key_name/tsig_secret/tsig_algorithm are actually known.
     ###########################################################################
     - name: Configure resolver, ACLs, and logging
+      # dnssecValidation: false (not true) -- confirmed live 2026-07-16: with
+      # it on, Technitium's own validator tries to build a DNSSEC chain up
+      # from example.com (an unsigned, private zone never delegated from
+      # the real public .com) for every forwarded/recursive answer, can't
+      # find the expected DS record, and treats that as a possible spoofing
+      # attack (cached as "FailureCache: ServerFailure; DnssecIndeterminate:
+      # Attack detected! Unable to resolve DS for example.com") instead of
+      # the correct "insecure delegation, skip validation" -- this happened
+      # even with dnssecValidation=false already set on the zone's own FWD
+      # record, so the global setting isn't overridden by the per-forwarder
+      # flag for this check. Broke split-DNS conditional forwarding for all
+      # three zones outright (SERVFAIL on any name not explicitly defined).
+      # Trade-off: this also stops validating DNSSEC for external/public
+      # lookups, not just internal ones -- accepted deliberately for an
+      # internal resolver sitting behind Unbound, not an oversight.
       uri:
         url: "{{ technitium_api }}/settings/set"
         method: POST
@@ -164,7 +179,7 @@
         body:
           dnsServerDomain: "{{ dns_hostname }}"
           forwarders: "{{ upstream_resolver_ip }}"
-          dnssecValidation: true
+          dnssecValidation: false
           recursion: "UseSpecifiedNetworkACL"
           recursionNetworkACL: "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
           zoneTransferAllowedNetworks: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
