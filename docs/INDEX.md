@@ -9,6 +9,7 @@ Start Here
 - DOC-MAP.md
 - FEATURES.md -- what infrastructure technology this project touches
   and why, at a glance
+- TODO.md -- proposed, scoped future work (not yet started)
 
 ---------------------------------------------------------------------
 Architecture
