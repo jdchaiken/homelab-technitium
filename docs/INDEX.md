@@ -7,6 +7,8 @@ Start Here
 ---------------------------------------------------------------------
 - GETTING-STARTED.md
 - DOC-MAP.md
+- FEATURES.md -- what infrastructure technology this project touches
+  and why, at a glance
 
 ---------------------------------------------------------------------
 Architecture
