@@ -87,4 +87,4 @@ The system automatically cuts over to a new VM without downtime.
 
 ## License
 
-Internal use only.
+MIT License
