@@ -3,11 +3,20 @@
 # Proxmox cluster, keyed off Proxmox's own name/IP -- so infrastructure
 # hosts don't need to be hand-maintained in dns/zones/*.zone.
 #
-# Meant to run ON a Proxmox node (uses pvesh/qm/pct directly), on a
-# periodic systemd timer -- see proxmox-dns-sync.timer alongside this
-# script. Deployed the same way as next-vmid.sh/current-prod-vmid.sh:
-# manually copied to /opt/infra/technitium/ on the Proxmox host, no
-# automated sync from git for these.
+# Meant to run ON a Proxmox node (uses pvesh directly), on a periodic
+# systemd timer -- see proxmox-dns-sync.timer alongside this script.
+#
+# This SCRIPT lives in /etc/pve/technitium/ (pmxcfs, the Proxmox cluster
+# filesystem) -- automatically replicated to every node, not copied
+# per-node. The systemd .service/.timer UNIT FILES still have to be
+# deployed to each node's local /etc/systemd/system/ (systemd can't
+# discover units from /etc/pve/ directly), and are installed + enabled on
+# ALL FOUR nodes, not just one -- see INSTALL.md. Without that, this
+# sync would have a single point of failure: whichever one node it ran
+# from. With all four nodes' timers active and the lock below, the sync
+# keeps running even if the node that normally wins the lock goes down --
+# the next timer fire on any surviving node picks it up within one
+# 15-minute cycle, no manual failover needed.
 #
 # IP discovery, per VM/CT type:
 #   - qemu (VM): QEMU guest agent (`qm guest cmd <vmid>
@@ -41,10 +50,24 @@
 # the manual entries.
 set -euo pipefail
 
-TECHNITIUM_API="https://172.16.100.6:8443/api"
-ZONE="example.com"
-STATE_FILE="/opt/infra/technitium/proxmox-dns-sync-state.json"
-BW_ENV="/etc/pve/technitium/bw.env"
+CLUSTER_DIR="/etc/pve/technitium"
+STATE_FILE="${CLUSTER_DIR}/proxmox-dns-sync-state.json"
+LOCK_FILE="${CLUSTER_DIR}/proxmox-dns-sync.lock"
+BW_ENV="${CLUSTER_DIR}/bw.env"
+
+# TECHNITIUM_API/ZONE are read from bw.env below (PROXMOX_DNS_SYNC_*
+# keys) so custom config lives in one place alongside the secrets this
+# script already reads from there -- these hardcoded values are only the
+# fallback if bw.env doesn't set them, not the source of truth.
+DEFAULT_TECHNITIUM_API="https://172.16.100.6:8443/api"
+DEFAULT_ZONE="example.com"
+
+# Longer than a normal run (~60-70s for ~20 VMs) but comfortably shorter
+# than the 15-minute timer interval, so a run that crashed mid-way
+# without clearing its lock doesn't block a full cycle on every other
+# node -- the next scheduled fire anywhere sees the lock as stale and
+# takes over anyway.
+LOCK_STALE_SECONDS=600
 
 # Proxmox objects that are Technitium's own build/production VMs -- these
 # already have real, authoritative records (ns1/ns2 A + NS) from the zone
@@ -55,10 +78,30 @@ EXCLUDE_NAMES="^(ns1|ns2|technitium-temp|technitium-ns2-temp)$"
 
 log() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*"; }
 
-# --- 1. Authenticate to Technitium (fresh session token every run --
-# the admin password is stable, unlike the TSIG key/API key, which
-# regenerate on every ns1 rebuild) ---
-ADMIN_PASS=$(grep -oP 'TECHNITIUM_ADMIN_PASSWORD="?\K[^"\n]+' "$BW_ENV")
+# --- 0. Cluster-wide lock: only one node's timer fire actually runs the
+# sync at a time. All four nodes have this timer enabled (for resilience
+# if one node is down), so without this every node would race to write
+# the same DNS records simultaneously on every interval. ---
+NOW=$(date +%s)
+if [ -f "$LOCK_FILE" ]; then
+    LOCK_HOST=$(cut -d' ' -f1 "$LOCK_FILE" 2>/dev/null || echo "")
+    LOCK_TIME=$(cut -d' ' -f2 "$LOCK_FILE" 2>/dev/null || echo "0")
+    LOCK_AGE=$((NOW - LOCK_TIME))
+    if [ "$LOCK_HOST" != "$(hostname)" ] && [ "$LOCK_AGE" -lt "$LOCK_STALE_SECONDS" ]; then
+        log "Lock held by ${LOCK_HOST} (${LOCK_AGE}s ago) -- skipping this run"
+        exit 0
+    fi
+fi
+echo "$(hostname) ${NOW}" > "$LOCK_FILE"
+
+# --- 1. Load config + authenticate to Technitium (fresh session token
+# every run -- the admin password is stable, unlike the TSIG key/API
+# key, which regenerate on every ns1 rebuild) ---
+BW_ENV_RAW=$(cat "$BW_ENV")
+ADMIN_PASS=$(echo "$BW_ENV_RAW" | grep -oP 'TECHNITIUM_ADMIN_PASSWORD="?\K[^"\n]+')
+TECHNITIUM_API=$(echo "$BW_ENV_RAW" | grep -oP 'PROXMOX_DNS_SYNC_TECHNITIUM_API="?\K[^"\n]+' || echo "$DEFAULT_TECHNITIUM_API")
+ZONE=$(echo "$BW_ENV_RAW" | grep -oP 'PROXMOX_DNS_SYNC_ZONE="?\K[^"\n]+' || echo "$DEFAULT_ZONE")
+
 TOKEN=$(curl -sk -X POST "${TECHNITIUM_API}/user/login" \
     --data-urlencode "user=admin" --data-urlencode "pass=${ADMIN_PASS}" \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')

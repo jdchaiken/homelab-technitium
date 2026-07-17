@@ -5,4 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/opt/infra/technitium/proxmox-dns-sync.sh
+# Script lives in pmxcfs (/etc/pve/technitium/), replicated to every
+# node automatically -- this unit file itself is deployed to all four
+# nodes' local /etc/systemd/system/ individually, since systemd can't
+# discover units from /etc/pve/ directly. See INSTALL.md.
+#
+# Invoked via `bash <path>`, not the execute bit + shebang: pmxcfs uses
+# a fixed permission scheme for everything under /etc/pve/ (always
+# rw-r----- root:www-data) -- chmod +x fails with "Operation not
+# permitted", confirmed live.
+ExecStart=/usr/bin/bash /etc/pve/technitium/proxmox-dns-sync.sh

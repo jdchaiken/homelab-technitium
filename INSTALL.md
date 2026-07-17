@@ -152,32 +152,42 @@ This step is manual only once.
 
 Additionally:
 
-Copy proxmox-dns-sync.sh and its systemd units to `/opt/infra/technitium`
-on `pm_node` **only** -- unlike next-vmid.sh/current-prod-vmid.sh, this one
-must run from exactly one node, not every node: it's a periodic sync job
-(not something Terraform invokes on demand), and running it from multiple
-nodes at once would just race itself writing to the same DNS records.
+Copy proxmox-dns-sync.sh into `/etc/pve/technitium/` -- pmxcfs, the
+Proxmox **cluster filesystem**, automatically replicated to every node.
+Only needs doing from one node (any node); the file is instantly visible
+on all four. pmxcfs uses a fixed permission scheme for everything under
+`/etc/pve/` (`chmod` fails with "Operation not permitted"), so the
+systemd unit below invokes it via `bash <path>`, not the execute bit.
 ```bash
 scp technitium/terraform/scripts/proxmox-dns-sync.sh \
-    technitium/terraform/scripts/proxmox-dns-sync.service \
-    technitium/terraform/scripts/proxmox-dns-sync.timer \
-    root@<pm_node>:/opt/infra/technitium/
+    root@<any-node>:/etc/pve/technitium/proxmox-dns-sync.sh
+```
 
-ssh root@<pm_node> '
-  chmod +x /opt/infra/technitium/proxmox-dns-sync.sh
-  cp /opt/infra/technitium/proxmox-dns-sync.service /etc/systemd/system/
-  cp /opt/infra/technitium/proxmox-dns-sync.timer /etc/systemd/system/
-  systemctl daemon-reload
-  systemctl enable --now proxmox-dns-sync.timer
-'
+Then deploy the systemd `.service`/`.timer` **unit files** to **all four
+nodes individually** -- systemd can't discover units living in
+`/etc/pve/`, so these have to land in each node's own local
+`/etc/systemd/system/`. This is deliberate, not an oversight: with the
+script itself in cluster storage and all four nodes' timers active, the
+sync survives any single node going down -- a lock inside the script
+(also stored in `/etc/pve/technitium/`) ensures only one node's timer
+fire actually runs at a time; if the node that normally wins is down,
+the next timer fire on any surviving node sees a stale lock and takes
+over, at most one 15-minute cycle of delay.
+```bash
+clush -g pve -c technitium/terraform/scripts/proxmox-dns-sync.service --dest /etc/systemd/system/
+clush -g pve -c technitium/terraform/scripts/proxmox-dns-sync.timer --dest /etc/systemd/system/
+clush -g pve systemctl daemon-reload
+clush -g pve systemctl enable --now proxmox-dns-sync.timer
 ```
 
 This publishes an A record in Technitium for every running Proxmox VM/CT,
-keyed off Proxmox's own name/IP, on a 15-minute timer -- see
-[`docs/OPERATIONS.md`](docs/OPERATIONS.md) for what it does and its
-reconciliation/safety model. This step is manual only once; re-run the
-`scp`/`cp`/`daemon-reload` block whenever the script itself changes, same
-as the VMID scripts above.
+keyed off Proxmox's own name/IP -- see [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+for what it does and its reconciliation/safety model, and
+[`secrets/bw.env.sample`](secrets/bw.env.sample) for its optional
+`PROXMOX_DNS_SYNC_*` config overrides. This step is manual only once;
+re-run the `scp` when the script itself changes (instant everywhere, no
+`clush` needed), or the `clush` block only if the systemd units
+themselves change.
 
 ---------------------------------------------------------------------
 5. Configure Terraform

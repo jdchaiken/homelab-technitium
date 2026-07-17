@@ -114,25 +114,37 @@ Real secrets live in Proxmox:
 # 9. Check Proxmox DNS Sync
 
 Publishes an A record in Technitium for every running Proxmox VM/CT
-(name + IP), on a 15-minute systemd timer on `pm_node` -- see
+(name + IP), on a 15-minute systemd timer -- see
 `technitium/terraform/scripts/proxmox-dns-sync.sh` for the full design
-notes and `INSTALL.md` for (re-)deployment. Runs from `pm_node` only,
-never every node -- it's a periodic job, not something Terraform invokes
-on demand, and running it from multiple nodes would race itself.
+notes and `INSTALL.md` for (re-)deployment.
 
-Check status / trigger a run by hand:
+Runs on **all four nodes**, not just one -- the script itself lives in
+`/etc/pve/technitium/` (pmxcfs, replicated cluster-wide automatically),
+and a lock file (also in `/etc/pve/technitium/`) ensures only one node's
+timer fire actually does the work at a time. This is deliberate: if it
+only ran from a single node and that node went down, the sync would just
+stop. With all four active, the next timer fire on any surviving node
+sees the lock as stale (>10 minutes old) and takes over -- at most one
+15-minute cycle of delay, no manual failover.
 
-    ssh root@<pm_node> systemctl status proxmox-dns-sync.timer
-    ssh root@<pm_node> systemctl start proxmox-dns-sync.service   # runs once, immediately
-    ssh root@<pm_node> journalctl -u proxmox-dns-sync.service -n 60
+Check status / trigger a run by hand (any node):
 
-Only ever touches records it created itself, tracked in a local state
-file (`/opt/infra/technitium/proxmox-dns-sync-state.json`) -- never
-touches manually-created records or records from ExternalDNS/Kea. VMs
-whose name collides with a manually-maintained zone-file entry (`pve01-
-04`, `docker01-03`, `nas01`, `omada`, `postgresql` as of this writing)
-are managed by both until those entries are removed from the zone file --
-the sync's writes win day-to-day, the zone file's import wins at the next
+    ssh root@<node> systemctl status proxmox-dns-sync.timer
+    ssh root@<node> systemctl start proxmox-dns-sync.service   # runs once, immediately (or logs "lock held by <other node>" and exits if another node is already running)
+    ssh root@<node> journalctl -u proxmox-dns-sync.service -n 60
+
+Config overrides (Technitium API URL, target zone) live in
+`/etc/pve/technitium/bw.env` as `PROXMOX_DNS_SYNC_*` keys -- see
+`secrets/bw.env.sample`. Both fall back to sensible defaults if unset.
+
+Only ever touches records it created itself, tracked in a state file in
+the same cluster-storage directory
+(`/etc/pve/technitium/proxmox-dns-sync-state.json`) -- never touches
+manually-created records or records from ExternalDNS/Kea. VMs whose name
+collides with a manually-maintained zone-file entry (`pve01-04`,
+`docker01-03`, `nas01`, `omada`, `postgresql` as of this writing) are
+managed by both until those entries are removed from the zone file -- the
+sync's writes win day-to-day, the zone file's import wins at the next
 `make deploy`.
 
 ---

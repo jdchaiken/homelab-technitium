@@ -92,11 +92,13 @@ without operators having to hand-maintain `old_vm_id`. See VMID.md.
 
 Publishes an A record in Technitium for every running Proxmox VM/CT,
 keyed off Proxmox's own name/IP -- runs on a 15-minute systemd timer on
-`pm_node` only (not every node -- it's a periodic job, not something
-Terraform invokes, and multiple nodes running it would race each other).
-Deployed the same way as the two scripts above: manually copied to
-`/opt/infra/technitium`, see INSTALL.md. See OPERATIONS.md § 9 for
-day-to-day operation and its reconciliation/safety model.
+**all four nodes**, coordinated by a lock file so only one actually runs
+at a time. Unlike the two scripts above (copied per-node via `clush`),
+the script itself lives in `/etc/pve/technitium/` -- pmxcfs, replicated
+cluster-wide automatically, so there's exactly one copy to keep current
+regardless of which/how many nodes run it. Deployment is still manual,
+see INSTALL.md. See OPERATIONS.md § 9 for day-to-day operation and its
+reconciliation/safety model.
 
 ---
 
