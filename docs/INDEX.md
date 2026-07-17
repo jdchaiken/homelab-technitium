@@ -10,6 +10,8 @@ Start Here
 - FEATURES.md -- what infrastructure technology this project touches
   and why, at a glance
 - TODO.md -- proposed, scoped future work (not yet started)
+- ../AI.md -- working rules and hard-won gotchas, for an AI assistant
+  operating in this repo
 
 ---------------------------------------------------------------------
 Architecture

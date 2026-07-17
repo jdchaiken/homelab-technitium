@@ -22,6 +22,8 @@ Start here:
 - [Getting Started](docs/GETTING-STARTED.md)
 - [Onboarding Guide](docs/ONBOARDING.md)
 - [Developer Quickstart](docs/DEV-QUICKSTART.md)
+- [AI.md](AI.md) — working rules and hard-won gotchas, for an AI
+  assistant operating in this repo
 - [Operator Cheat Sheet](docs/CHEATSHEET.md)
 
 Architecture:
