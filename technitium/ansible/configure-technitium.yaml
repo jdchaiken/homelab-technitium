@@ -427,6 +427,18 @@
     #     record types those two systems actually write; deliberately
     #     excludes NS/SOA/DNSKEY etc.
     #
+    #     DHCID is included alongside the record types ExternalDNS/Kea
+    #     actually intend to write -- confirmed live (2026-07-17) that
+    #     Kea's "check-with-dhcid" conflict-resolution mode (the OPNsense
+    #     default) sends a DHCID record in the SAME update transaction as
+    #     the A/AAAA record, to track which DHCP client owns a hostname.
+    #     DNS UPDATE transactions are atomic: Technitium's own log showed
+    #     it refusing the entire update ("DNS Server refused a zone UPDATE
+    #     request [host.example.com DHCID IN] due to Dynamic Updates
+    #     Security Policy") even though the A record in the same
+    #     transaction would've been permitted on its own -- one
+    #     disallowed record type in the transaction sinks the whole thing.
+    #
     # Secondary zones (ns2) intentionally don't get this: updateSecurity
     # Policies is only valid on Primary/Forwarder zones in Technitium --
     # updates belong on the primary and reach ns2 via zone transfer, never
@@ -449,7 +461,7 @@
           zone: "{{ item }}"
           update: "UseSpecifiedNetworkACL"
           updateNetworkACL: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17,10.0.0.0/8"
-          updateSecurityPolicies: "{{ tsig_key_name }}|*.{{ item }}|A,AAAA,CNAME,TXT,SRV"
+          updateSecurityPolicies: "{{ tsig_key_name }}|*.{{ item }}|A,AAAA,CNAME,TXT,SRV,DHCID"
         status_code: 200
 
     ###########################################################################
