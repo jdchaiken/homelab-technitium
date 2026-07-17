@@ -1,12 +1,14 @@
 $TTL 300
 @       IN SOA  ns1.storage.example.com. admin.storage.example.com. (
-            2026071703 ; serial
+            2026071704 ; serial
             3600       ; refresh
             1800       ; retry
             604800     ; expire
             300        ; minimum
         )
 
+; NS records below are required for named-checkzone but deleted from the
+; live zone by the deploy pipeline -- see example.com.zone for why.
         IN NS   ns1.storage.example.com.
         IN NS   ns2.storage.example.com.
 ns1     IN A    172.16.100.6

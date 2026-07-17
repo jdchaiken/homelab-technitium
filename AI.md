@@ -133,6 +133,25 @@ Each of these cost real debugging time. Don't re-learn them.
   instead of "insecure, skip validation," even with the per-FWD-record
   `dnssecValidation: false` already set. This project runs with global
   DNSSEC validation off, deliberately, for this reason.
+- **A Forwarder (Conditional Forwarder) zone must not have local NS
+  records for itself, or its FWD-based fallback breaks completely.**
+  Confirmed live 2026-07-17: `example.com`/`example.net`/
+  `storage.example.com` all had `IN NS ns1.X` / `IN NS ns2.X` records
+  (present only because `named-checkzone` requires at least one NS record
+  per zone). With those records live, any name not explicitly in the zone
+  file -- `home.example.com`, `auth.example.com`, anything hosted on
+  Cloudflare -- SERVFAILed instantly (<5ms, the FWD forwarder was never
+  even contacted), because Technitium treated the zone as genuinely
+  self-delegated and attempted real recursive resolution against its own
+  NS records instead of consulting FWD. Deleting the two NS records live
+  (`zones/records/delete&type=NS&nameServer=ns1.X`, same for ns2) fixed it
+  immediately -- every previously-failing name started resolving correctly
+  through the real FWD path. The zone files keep the NS records (for
+  `make validate-zones`); `push-zones.sh` and `configure-technitium.yaml`
+  (task 11a2) both delete them from the live zone right after every
+  import/create. If you ever see instant (not timeout-latency) SERVFAIL
+  for a non-local name in one of these zones, check for stray NS records
+  first via `zones/records/get?domain=<zone>&zone=<zone>&listZone=false`.
 - **`updateSecurityPolicies`'s allowed record types must cover
   everything a client's UPDATE transaction might send, not just the
   record you think of as "the" record.** DNS UPDATE transactions are

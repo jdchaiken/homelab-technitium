@@ -25,6 +25,18 @@ for zone in "${ZONES[@]}"; do
             -H "Authorization: Bearer ${TOKEN}" \
             -H "Content-Type: text/plain" \
             --data-binary @-
+
+        # The zone file must carry NS records for named-checkzone to accept
+        # it (make validate-zones), but a Forwarder zone with local NS
+        # records for itself breaks Conditional Forwarder fallback --
+        # Technitium attempts real self-referential recursive resolution
+        # instead of using the FWD record for any name not explicitly
+        # listed in the zone file. Delete them from the live zone right
+        # after every import. Confirmed live 2026-07-17, see AI.md.
+        curl -sk -f -X POST "https://127.0.0.1:8443/api/zones/records/delete?zone='"${zone}"'&domain='"${zone}"'&type=NS&nameServer=ns1.'"${zone}"'" \
+            -H "Authorization: Bearer ${TOKEN}" > /dev/null
+        curl -sk -f -X POST "https://127.0.0.1:8443/api/zones/records/delete?zone='"${zone}"'&domain='"${zone}"'&type=NS&nameServer=ns2.'"${zone}"'" \
+            -H "Authorization: Bearer ${TOKEN}" > /dev/null
     ' < "zones/${zone}.zone"
     echo
 done

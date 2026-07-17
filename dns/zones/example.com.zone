@@ -1,12 +1,20 @@
 $TTL 300
 @       IN SOA  ns1.example.com. admin.example.com. (
-            2026071703 ; serial
+            2026071704 ; serial
             3600
             1800
             604800
             300
         )
 
+; NS records below are required for named-checkzone (make validate-zones)
+; but must NOT reach the live Forwarder zone in Technitium: a zone
+; delegated to itself via local NS records makes Technitium attempt real
+; self-referential recursive resolution instead of using the FWD record
+; for any name not explicitly listed in this file -- confirmed live
+; 2026-07-17 (see AI.md). The deploy pipeline (push-zones.sh and
+; configure-technitium.yaml) deletes these NS records from the live zone
+; immediately after every import, same pattern as re-adding FWD.
             IN NS   ns1.example.com.
             IN NS   ns2.example.com.
 ns1         IN A    172.16.100.6

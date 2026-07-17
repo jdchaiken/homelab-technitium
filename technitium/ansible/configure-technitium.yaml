@@ -347,15 +347,12 @@
     # type=Forwarder (not Primary) -- Technitium's own name for this is
     # "Conditional Forwarder": the zone still answers every record in the
     # zone file authoritatively, but any name that ISN'T explicitly defined
-    # (e.g. home.example.com, hosted externally) falls through to the FWD
-    # record's target instead of returning NXDOMAIN. A Primary zone can't do
-    # this -- being authoritative for a zone means NXDOMAIN is final for
-    # anything not in it; the global `forwarders` setting above (task 7)
-    # never gets consulted for a zone this server already hosts. Confirmed
-    # against Technitium's own source (DnsServerCore/Dns/Zones/
-    # ForwarderZone.cs, DnsServer.cs's ConditionalForwarderResolveAsync) --
-    # not live-tested end-to-end as of this writing; validate via
-    # `make deploy-staging` before trusting this on production zones.
+    # (e.g. home.example.com, hosted externally) is *supposed* to fall
+    # through to the FWD record's target instead of returning NXDOMAIN. A
+    # Primary zone can't do this -- being authoritative for a zone means
+    # NXDOMAIN is final for anything not in it; the global `forwarders`
+    # setting above (task 7) never gets consulted for a zone this server
+    # already hosts.
     #
     # zones/create with type=Forwarder AND a zoneFile attached in the same
     # call creates the FWD record, then immediately DELETES it again as
@@ -363,6 +360,21 @@
     # record before importing, same as it clears NS for a fresh Primary
     # zone) -- confirmed in WebServiceZonesApi.cs's CreateZoneAsync. Task
     # 11a below re-adds the FWD record afterward for that reason.
+    #
+    # CONFIRMED LIVE 2026-07-17, the hard way: the fallback-to-FWD path
+    # above was never actually exercised end-to-end until now, and it was
+    # broken. The zone file's own "IN NS ns1/ns2" records (needed only to
+    # satisfy named-checkzone) were also being imported into the live zone,
+    # and their presence made Technitium treat example.com as genuinely
+    # self-delegated -- any name without an exact local record match hit
+    # real self-referential recursive resolution (querying its own NS
+    # records, i.e. itself) and failed instantly (<5ms, no forwarder
+    # timeout even attempted), instead of using the FWD record. Every
+    # externally-hosted name under all three zones (auth, www, vpn, mealie,
+    # home.example.com, ...) was SERVFAILing. Task 11a2 below deletes
+    # those NS records from the live zone after every import/create, which
+    # fully fixed it -- verified by direct DNS queries against both ns1 and
+    # ns2 before/after. See AI.md for the full incident writeup.
     ###########################################################################
     - name: Create Technitium zones from zone files
       loop:
@@ -398,6 +410,49 @@
         label: "{{ item }}"
       uri:
         url: "{{ technitium_api }}/zones/records/add?zone={{ item }}&domain={{ item }}&type=FWD&protocol=Udp&forwarder={{ upstream_resolver_ip }}&dnssecValidation=false"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ technitium_api_key }}"
+        status_code: 200
+
+    ###########################################################################
+    # 11a2. DELETE THE ZONE FILE'S NS RECORDS (self-delegation breaks FWD)
+    # The zone files carry "IN NS ns1/ns2" records only because
+    # named-checkzone (make validate-zones) requires at least one NS record
+    # per zone. Left live on a Forwarder zone, those NS records make
+    # Technitium treat the zone as genuinely delegated to itself: any name
+    # not explicitly in the zone file falls into real self-referential
+    # recursive resolution (querying its own NS records, i.e. itself)
+    # instead of using the FWD record above -- an instant SERVFAIL for
+    # every name not locally defined (e.g. home.example.com, hosted on
+    # Cloudflare). Confirmed live 2026-07-17: querying auth/www/vpn/mealie.
+    # example.com all failed in <5ms (no forwarder timeout even attempted)
+    # until these NS records were deleted, at which point every one
+    # resolved correctly through the FWD path. See AI.md.
+    ###########################################################################
+    - name: Delete self-referential ns1 NS record from each zone
+      loop:
+        - example.com
+        - example.net
+        - storage.example.com
+      loop_control:
+        label: "{{ item }}"
+      uri:
+        url: "{{ technitium_api }}/zones/records/delete?zone={{ item }}&domain={{ item }}&type=NS&nameServer=ns1.{{ item }}"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ technitium_api_key }}"
+        status_code: 200
+
+    - name: Delete self-referential ns2 NS record from each zone
+      loop:
+        - example.com
+        - example.net
+        - storage.example.com
+      loop_control:
+        label: "{{ item }}"
+      uri:
+        url: "{{ technitium_api }}/zones/records/delete?zone={{ item }}&domain={{ item }}&type=NS&nameServer=ns2.{{ item }}"
         method: POST
         headers:
           Authorization: "Bearer {{ technitium_api_key }}"
