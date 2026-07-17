@@ -63,3 +63,5 @@ Terraform Scripts:
 - technitium/terraform/scripts/next-vmid.sh
 - technitium/terraform/scripts/current-prod-vmid.sh
 - technitium/terraform/scripts/vmid-file.sh
+- technitium/terraform/scripts/proxmox-dns-sync.sh (+ .service/.timer) --
+  periodic Proxmox VM/CT -> Technitium DNS sync, see OPERATIONS.md § 9

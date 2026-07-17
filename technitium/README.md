@@ -86,6 +86,18 @@ Finds whichever VM in that same range currently holds `prod_vm_ip`, so
 Terraform can auto-detect and stop/destroy the old VM during cutover
 without operators having to hand-maintain `old_vm_id`. See VMID.md.
 
+### Proxmox DNS sync
+
+    technitium/terraform/scripts/proxmox-dns-sync.sh
+
+Publishes an A record in Technitium for every running Proxmox VM/CT,
+keyed off Proxmox's own name/IP -- runs on a 15-minute systemd timer on
+`pm_node` only (not every node -- it's a periodic job, not something
+Terraform invokes, and multiple nodes running it would race each other).
+Deployed the same way as the two scripts above: manually copied to
+`/opt/infra/technitium`, see INSTALL.md. See OPERATIONS.md § 9 for
+day-to-day operation and its reconciliation/safety model.
+
 ---
 
 ## Zero-Downtime Workflow

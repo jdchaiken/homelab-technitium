@@ -52,6 +52,13 @@ Quick reference for daily operations.
 
 ---
 
+# Check Proxmox DNS Sync
+
+    ssh root@<pm_node> systemctl status proxmox-dns-sync.timer
+    ssh root@<pm_node> journalctl -u proxmox-dns-sync.service -n 60
+
+---
+
 # Check CI/CD
 
 Gitea → Pipelines → DNS Validation

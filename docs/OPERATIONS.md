@@ -111,7 +111,33 @@ Real secrets live in Proxmox:
 
 ---
 
-# 9. Summary
+# 9. Check Proxmox DNS Sync
+
+Publishes an A record in Technitium for every running Proxmox VM/CT
+(name + IP), on a 15-minute systemd timer on `pm_node` -- see
+`technitium/terraform/scripts/proxmox-dns-sync.sh` for the full design
+notes and `INSTALL.md` for (re-)deployment. Runs from `pm_node` only,
+never every node -- it's a periodic job, not something Terraform invokes
+on demand, and running it from multiple nodes would race itself.
+
+Check status / trigger a run by hand:
+
+    ssh root@<pm_node> systemctl status proxmox-dns-sync.timer
+    ssh root@<pm_node> systemctl start proxmox-dns-sync.service   # runs once, immediately
+    ssh root@<pm_node> journalctl -u proxmox-dns-sync.service -n 60
+
+Only ever touches records it created itself, tracked in a local state
+file (`/opt/infra/technitium/proxmox-dns-sync-state.json`) -- never
+touches manually-created records or records from ExternalDNS/Kea. VMs
+whose name collides with a manually-maintained zone-file entry (`pve01-
+04`, `docker01-03`, `nas01`, `omada`, `postgresql` as of this writing)
+are managed by both until those entries are removed from the zone file --
+the sync's writes win day-to-day, the zone file's import wins at the next
+`make deploy`.
+
+---
+
+# 10. Summary
 
 Operators manage:
 
@@ -121,3 +147,4 @@ Operators manage:
 - Staging test deploys
 - CI/CD validation
 - Secret hygiene
+- Proxmox DNS sync (largely self-managing once deployed)

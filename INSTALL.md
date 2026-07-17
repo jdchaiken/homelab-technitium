@@ -150,6 +150,35 @@ pveum aclmod /nodes/pve04 -user root@pam -role Administrator
 
 This step is manual only once.
 
+Additionally:
+
+Copy proxmox-dns-sync.sh and its systemd units to `/opt/infra/technitium`
+on `pm_node` **only** -- unlike next-vmid.sh/current-prod-vmid.sh, this one
+must run from exactly one node, not every node: it's a periodic sync job
+(not something Terraform invokes on demand), and running it from multiple
+nodes at once would just race itself writing to the same DNS records.
+```bash
+scp technitium/terraform/scripts/proxmox-dns-sync.sh \
+    technitium/terraform/scripts/proxmox-dns-sync.service \
+    technitium/terraform/scripts/proxmox-dns-sync.timer \
+    root@<pm_node>:/opt/infra/technitium/
+
+ssh root@<pm_node> '
+  chmod +x /opt/infra/technitium/proxmox-dns-sync.sh
+  cp /opt/infra/technitium/proxmox-dns-sync.service /etc/systemd/system/
+  cp /opt/infra/technitium/proxmox-dns-sync.timer /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable --now proxmox-dns-sync.timer
+'
+```
+
+This publishes an A record in Technitium for every running Proxmox VM/CT,
+keyed off Proxmox's own name/IP, on a 15-minute timer -- see
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md) for what it does and its
+reconciliation/safety model. This step is manual only once; re-run the
+`scp`/`cp`/`daemon-reload` block whenever the script itself changes, same
+as the VMID scripts above.
+
 ---------------------------------------------------------------------
 5. Configure Terraform
 ---------------------------------------------------------------------

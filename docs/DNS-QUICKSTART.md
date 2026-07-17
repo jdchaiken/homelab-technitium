@@ -2,6 +2,12 @@
 
 This guide explains how to add or modify DNS records.
 
+**Proxmox VMs and containers don't need this** — `proxmox-dns-sync.sh`
+(see `docs/OPERATIONS.md` § 9) publishes an A record for every running
+VM/CT automatically. Use this manual workflow for everything else:
+external hosts, records the sync can't discover an IP for, or anything
+not running in Proxmox at all.
+
 ---
 
 # 1. Edit Zone File
