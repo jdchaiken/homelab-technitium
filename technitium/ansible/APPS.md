@@ -1,10 +1,15 @@
 # Optional Technitium Apps & Integrations
 
 Reference for every module in [`configure-technitium-apps.yaml`](configure-technitium-apps.yaml).
-**Auto PTR, Weighted Round Robin, Query Logs (PostgreSQL), and the OPNsense
-TSIG sync are enabled** — wired into `technitium/terraform/main.tf`'s (and
-`ns2.tf`'s) remote-exec chain right after `configure-technitium-tls.yaml`,
-so they run on every rebuild.
+**Auto PTR, Weighted Round Robin, and Query Logs (PostgreSQL) are enabled**
+— wired into `technitium/terraform/main.tf`'s (and `ns2.tf`'s) remote-exec
+chain right after `configure-technitium-tls.yaml`, so they run on every
+rebuild. The OPNsense TSIG sync was briefly enabled too but is
+**disabled again for now** (see its own section below for why) — it needs
+a working split-DNS resolution path (ns1 and ns2 both already cut over to
+the Conditional Forwarder zone type) to even run, which doesn't exist yet
+mid-rebuild, so enabling it created a bootstrapping deadlock on every
+deploy that touches either node.
 Everything else in the file is still a **commented-out scaffold**. To
 enable another module: strip the leading `#` from its lines, fill in the
 placeholder values, add any secrets it needs to `bw.env` (see
@@ -105,7 +110,25 @@ call to `/api/admin/sso/set`. Works with any standard OIDC provider
   SSO specifically — double check against the web console
   (Administration > SSO) before relying on it.
 
-## OPNsense TSIG Sync — enabled, not yet live-verified
+## OPNsense TSIG Sync — disabled again (bootstrapping deadlock)
+
+Was briefly enabled and live-tested (2026-07-16). It correctly resolves
+`OPNSENSE_API_CONFIG`'s `host` (confirmed the scheme/hostname needs to be
+`https://opnsense.example.com`, not a bare IP -- there's a reverse proxy
+doing SNI-based routing in front of OPNsense) and correctly authenticates
+-- but resolving that hostname from *inside* the Technitium VM depends on
+split-DNS conditional forwarding already working, which in turn depends
+on ns1 and ns2 both already being fully cut over to the Conditional
+Forwarder zone type. During any deploy that rebuilds either node, this
+task runs mid-build, before that's true -- it ends up asking whichever
+node (old or new) is currently answering for the zone, and if that's the
+pre-cutover instance, resolution fails outright (`NXDOMAIN`) or, before
+the `dnssecValidation: false` fix, hangs on a spurious DNSSEC failure
+(`SERVFAIL`). Re-enable this once ns1/ns2 have both been running the
+Conditional Forwarder code for a while and split-DNS is confirmed stable
+-- at that point the bootstrapping problem doesn't apply anymore, since
+the resolver this task depends on will already be up before the rebuild
+that re-triggers this task even starts.
 
 Not a Technitium feature — configures **OPNsense's** Kea DHCP DDNS settings
 so DHCP leases get registered into Technitium via authenticated RFC2136

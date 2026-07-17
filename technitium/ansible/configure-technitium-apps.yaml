@@ -554,158 +554,158 @@
 #          ssoGroupMap: "{{ technitium_sso.groupMap }}"
 #        status_code: 200
 #      no_log: true
-
-    ###########################################################################
-    # OPNSENSE DDNS/TSIG SYNC -- pushes the externaldns TSIG key (generated
-    # by configure-technitium.yaml and stored in Bitwarden, NOT regenerated
-    # here) to every configured Kea DHCPv4/DHCPv6 subnet in OPNsense, so
-    # DHCP leases get registered into Technitium via authenticated RFC2136
-    # dynamic updates instead of unauthenticated ones.
-    #
-    # Field names and endpoints below come directly from OPNsense's own
-    # core source (github.com/opnsense/core), not documentation or
-    # guesswork:
-    #   - KeaDhcpv4.xml / KeaDhcpv6.xml, <subnet4>/<subnet6> items:
-    #     ddns_forward_zone, ddns_dns_server, ddns_dns_port,
-    #     ddns_domain_key_name, ddns_domain_key_secret (Base64Field),
-    #     ddns_domain_key_algorithm (hmac-md5/sha1/sha224/sha256/sha384/sha512)
-    #     -- these are PER-SUBNET fields, not a shared/global TSIG key list,
-    #     which is why this loops over every subnet and sets them on each.
-    #   - Dhcpv4Controller.php / Dhcpv6Controller.php:
-    #       GET  /api/kea/dhcpv{4,6}/search_subnet
-    #       POST /api/kea/dhcpv{4,6}/set_subnet/<uuid>  body: {"subnet4": {...}} (or "subnet6")
-    #       POST /api/kea/service/reconfigure           -- applies the change
-    #   - Auth: HTTP Basic, API key as username, API secret as password
-    #     (per OPNsense's official API docs).
-    #
-    # NOT live-tested against a real OPNsense instance -- none was available
-    # in this session. The field/endpoint names are read from OPNsense's
-    # actual source rather than assumed, but three things are still worth
-    # confirming on first real run: (1) whether set_subnet truly accepts a
-    # partial body (only the ddns_* fields) without clobbering the rest of
-    # the subnet's config -- standard OPNsense MVC setBase() behavior does,
-    # but wasn't observed directly; (2) whether search_subnet's response
-    # really is {"rows": [{"uuid": "...", ...}]} -- standard OPNsense search
-    # convention, same caveat; (3) whether Technitium and Kea agree on the
-    # TSIG secret bytes -- Technitium's generated secret (plain
-    # alphanumeric, configure-technitium.yaml) is also valid unpadded
-    # base64 since it's exactly 32 chars (a multiple of 4) drawn from a
-    # subset of the base64 alphabet, and RFC 2845 TSIG secrets are always
-    # base64-encoded key bytes, so this should decode identically on both
-    # ends -- but "should" isn't "verified", so test an actual signed
-    # update once before relying on this.
-    #
-    # Note also (confirmed via github.com/opnsense/core issue history):
-    # Kea's DDNS/TSIG support is relatively recent -- if your OPNsense
-    # version predates it, none of this will exist in the API at all.
-    #
-    # dns_forward_zone below applies to every subnet uniformly. If
-    # different subnets need different forward zones, split the loop body
-    # instead of using one shared value.
-    ###########################################################################
-    - name: Parse OPNsense API credentials (single JSON secret, same pattern as SSO)
-      set_fact:
-        opnsense: "{{ (bw_env_raw | regex_search('OPNSENSE_API_CONFIG=(.+)', '\\1') | first) | from_json }}"
-      no_log: true
-
-    - name: Parse Bitwarden CLI credentials (needed to look up the TSIG key by name)
-      set_fact:
-        bw_token: "{{ bw_env_raw | regex_search('BW_TOKEN=\"?([^\"\\n]+)\"?', '\\1') | first }}"
-        bw_projectid: "{{ bw_env_raw | regex_search('BW_PROJECTID=\"?([^\"\\n]+)\"?', '\\1') | first }}"
-      no_log: true
-
-    - name: Fetch the externaldns TSIG key from Bitwarden by name
-      # Looked up by key NAME, not a hardcoded secret ID: bws secret create
-      # isn't idempotent, so a secret's ID changes every time it's
-      # recreated (confirmed the hard way earlier in this project -- see
-      # git history) -- a hardcoded ID would silently go stale on the next
-      # TSIG rotation. Its name ("externaldns-tsig-*") is stable.
-      shell: |
-        export BWS_ACCESS_TOKEN="{{ bw_token }}"
-        bws secret list "{{ bw_projectid }}" -o json
-      register: bw_secrets_raw
-      changed_when: false
-      no_log: true
-
-    - name: Extract TSIG name/algorithm/secret from the Bitwarden secret list
-      set_fact:
-        opnsense_tsig_name: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-name') | map(attribute='value') | list | first) }}"
-        opnsense_tsig_algorithm: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-algorithm') | map(attribute='value') | list | first) }}"
-        opnsense_tsig_secret: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-secret') | map(attribute='value') | list | first) }}"
-      no_log: true
-
-    - name: List configured Kea DHCPv4 subnets
-      uri:
-        url: "{{ opnsense.host }}/api/kea/dhcpv4/search_subnet"
-        method: GET
-        url_username: "{{ opnsense.apiKey }}"
-        url_password: "{{ opnsense.apiSecret }}"
-        force_basic_auth: true
-        status_code: 200
-      register: opnsense_dhcpv4_subnets
-      no_log: true
-
-    - name: List configured Kea DHCPv6 subnets
-      uri:
-        url: "{{ opnsense.host }}/api/kea/dhcpv6/search_subnet"
-        method: GET
-        url_username: "{{ opnsense.apiKey }}"
-        url_password: "{{ opnsense.apiSecret }}"
-        force_basic_auth: true
-        status_code: 200
-      register: opnsense_dhcpv6_subnets
-      no_log: true
-
-    - name: Push TSIG key to each DHCPv4 subnet
-      uri:
-        url: "{{ opnsense.host }}/api/kea/dhcpv4/set_subnet/{{ item.uuid }}"
-        method: POST
-        url_username: "{{ opnsense.apiKey }}"
-        url_password: "{{ opnsense.apiSecret }}"
-        force_basic_auth: true
-        body_format: json
-        body:
-          subnet4:
-            ddns_forward_zone: "{{ dns_forward_zone }}"
-            ddns_dns_server: "{{ technitium_dns_server_ip }}"
-            ddns_dns_port: 53
-            ddns_domain_key_name: "{{ opnsense_tsig_name }}"
-            ddns_domain_key_secret: "{{ opnsense_tsig_secret }}"
-            ddns_domain_key_algorithm: "{{ opnsense_tsig_algorithm }}"
-        status_code: 200
-      loop: "{{ opnsense_dhcpv4_subnets.json.rows | default([]) }}"
-      loop_control:
-        label: "{{ item.subnet | default(item.uuid) }}"
-      no_log: true
-
-    - name: Push TSIG key to each DHCPv6 subnet
-      uri:
-        url: "{{ opnsense.host }}/api/kea/dhcpv6/set_subnet/{{ item.uuid }}"
-        method: POST
-        url_username: "{{ opnsense.apiKey }}"
-        url_password: "{{ opnsense.apiSecret }}"
-        force_basic_auth: true
-        body_format: json
-        body:
-          subnet6:
-            ddns_forward_zone: "{{ dns_forward_zone }}"
-            ddns_dns_server: "{{ technitium_dns_server_ip }}"
-            ddns_dns_port: 53
-            ddns_domain_key_name: "{{ opnsense_tsig_name }}"
-            ddns_domain_key_secret: "{{ opnsense_tsig_secret }}"
-            ddns_domain_key_algorithm: "{{ opnsense_tsig_algorithm }}"
-        status_code: 200
-      loop: "{{ opnsense_dhcpv6_subnets.json.rows | default([]) }}"
-      loop_control:
-        label: "{{ item.subnet | default(item.uuid) }}"
-      no_log: true
-
-    - name: Apply Kea configuration changes
-      uri:
-        url: "{{ opnsense.host }}/api/kea/service/reconfigure"
-        method: POST
-        url_username: "{{ opnsense.apiKey }}"
-        url_password: "{{ opnsense.apiSecret }}"
-        force_basic_auth: true
-        status_code: 200
-      no_log: true
+#
+#    ###########################################################################
+#    # OPNSENSE DDNS/TSIG SYNC -- pushes the externaldns TSIG key (generated
+#    # by configure-technitium.yaml and stored in Bitwarden, NOT regenerated
+#    # here) to every configured Kea DHCPv4/DHCPv6 subnet in OPNsense, so
+#    # DHCP leases get registered into Technitium via authenticated RFC2136
+#    # dynamic updates instead of unauthenticated ones.
+#    #
+#    # Field names and endpoints below come directly from OPNsense's own
+#    # core source (github.com/opnsense/core), not documentation or
+#    # guesswork:
+#    #   - KeaDhcpv4.xml / KeaDhcpv6.xml, <subnet4>/<subnet6> items:
+#    #     ddns_forward_zone, ddns_dns_server, ddns_dns_port,
+#    #     ddns_domain_key_name, ddns_domain_key_secret (Base64Field),
+#    #     ddns_domain_key_algorithm (hmac-md5/sha1/sha224/sha256/sha384/sha512)
+#    #     -- these are PER-SUBNET fields, not a shared/global TSIG key list,
+#    #     which is why this loops over every subnet and sets them on each.
+#    #   - Dhcpv4Controller.php / Dhcpv6Controller.php:
+#    #       GET  /api/kea/dhcpv{4,6}/search_subnet
+#    #       POST /api/kea/dhcpv{4,6}/set_subnet/<uuid>  body: {"subnet4": {...}} (or "subnet6")
+#    #       POST /api/kea/service/reconfigure           -- applies the change
+#    #   - Auth: HTTP Basic, API key as username, API secret as password
+#    #     (per OPNsense's official API docs).
+#    #
+#    # NOT live-tested against a real OPNsense instance -- none was available
+#    # in this session. The field/endpoint names are read from OPNsense's
+#    # actual source rather than assumed, but three things are still worth
+#    # confirming on first real run: (1) whether set_subnet truly accepts a
+#    # partial body (only the ddns_* fields) without clobbering the rest of
+#    # the subnet's config -- standard OPNsense MVC setBase() behavior does,
+#    # but wasn't observed directly; (2) whether search_subnet's response
+#    # really is {"rows": [{"uuid": "...", ...}]} -- standard OPNsense search
+#    # convention, same caveat; (3) whether Technitium and Kea agree on the
+#    # TSIG secret bytes -- Technitium's generated secret (plain
+#    # alphanumeric, configure-technitium.yaml) is also valid unpadded
+#    # base64 since it's exactly 32 chars (a multiple of 4) drawn from a
+#    # subset of the base64 alphabet, and RFC 2845 TSIG secrets are always
+#    # base64-encoded key bytes, so this should decode identically on both
+#    # ends -- but "should" isn't "verified", so test an actual signed
+#    # update once before relying on this.
+#    #
+#    # Note also (confirmed via github.com/opnsense/core issue history):
+#    # Kea's DDNS/TSIG support is relatively recent -- if your OPNsense
+#    # version predates it, none of this will exist in the API at all.
+#    #
+#    # dns_forward_zone below applies to every subnet uniformly. If
+#    # different subnets need different forward zones, split the loop body
+#    # instead of using one shared value.
+#    ###########################################################################
+#    - name: Parse OPNsense API credentials (single JSON secret, same pattern as SSO)
+#      set_fact:
+#        opnsense: "{{ (bw_env_raw | regex_search('OPNSENSE_API_CONFIG=(.+)', '\\1') | first) | from_json }}"
+#      no_log: true
+#
+#    - name: Parse Bitwarden CLI credentials (needed to look up the TSIG key by name)
+#      set_fact:
+#        bw_token: "{{ bw_env_raw | regex_search('BW_TOKEN=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+#        bw_projectid: "{{ bw_env_raw | regex_search('BW_PROJECTID=\"?([^\"\\n]+)\"?', '\\1') | first }}"
+#      no_log: true
+#
+#    - name: Fetch the externaldns TSIG key from Bitwarden by name
+#      # Looked up by key NAME, not a hardcoded secret ID: bws secret create
+#      # isn't idempotent, so a secret's ID changes every time it's
+#      # recreated (confirmed the hard way earlier in this project -- see
+#      # git history) -- a hardcoded ID would silently go stale on the next
+#      # TSIG rotation. Its name ("externaldns-tsig-*") is stable.
+#      shell: |
+#        export BWS_ACCESS_TOKEN="{{ bw_token }}"
+#        bws secret list "{{ bw_projectid }}" -o json
+#      register: bw_secrets_raw
+#      changed_when: false
+#      no_log: true
+#
+#    - name: Extract TSIG name/algorithm/secret from the Bitwarden secret list
+#      set_fact:
+#        opnsense_tsig_name: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-name') | map(attribute='value') | list | first) }}"
+#        opnsense_tsig_algorithm: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-algorithm') | map(attribute='value') | list | first) }}"
+#        opnsense_tsig_secret: "{{ (bw_secrets_raw.stdout | from_json | selectattr('key', 'equalto', 'externaldns-tsig-secret') | map(attribute='value') | list | first) }}"
+#      no_log: true
+#
+#    - name: List configured Kea DHCPv4 subnets
+#      uri:
+#        url: "{{ opnsense.host }}/api/kea/dhcpv4/search_subnet"
+#        method: GET
+#        url_username: "{{ opnsense.apiKey }}"
+#        url_password: "{{ opnsense.apiSecret }}"
+#        force_basic_auth: true
+#        status_code: 200
+#      register: opnsense_dhcpv4_subnets
+#      no_log: true
+#
+#    - name: List configured Kea DHCPv6 subnets
+#      uri:
+#        url: "{{ opnsense.host }}/api/kea/dhcpv6/search_subnet"
+#        method: GET
+#        url_username: "{{ opnsense.apiKey }}"
+#        url_password: "{{ opnsense.apiSecret }}"
+#        force_basic_auth: true
+#        status_code: 200
+#      register: opnsense_dhcpv6_subnets
+#      no_log: true
+#
+#    - name: Push TSIG key to each DHCPv4 subnet
+#      uri:
+#        url: "{{ opnsense.host }}/api/kea/dhcpv4/set_subnet/{{ item.uuid }}"
+#        method: POST
+#        url_username: "{{ opnsense.apiKey }}"
+#        url_password: "{{ opnsense.apiSecret }}"
+#        force_basic_auth: true
+#        body_format: json
+#        body:
+#          subnet4:
+#            ddns_forward_zone: "{{ dns_forward_zone }}"
+#            ddns_dns_server: "{{ technitium_dns_server_ip }}"
+#            ddns_dns_port: 53
+#            ddns_domain_key_name: "{{ opnsense_tsig_name }}"
+#            ddns_domain_key_secret: "{{ opnsense_tsig_secret }}"
+#            ddns_domain_key_algorithm: "{{ opnsense_tsig_algorithm }}"
+#        status_code: 200
+#      loop: "{{ opnsense_dhcpv4_subnets.json.rows | default([]) }}"
+#      loop_control:
+#        label: "{{ item.subnet | default(item.uuid) }}"
+#      no_log: true
+#
+#    - name: Push TSIG key to each DHCPv6 subnet
+#      uri:
+#        url: "{{ opnsense.host }}/api/kea/dhcpv6/set_subnet/{{ item.uuid }}"
+#        method: POST
+#        url_username: "{{ opnsense.apiKey }}"
+#        url_password: "{{ opnsense.apiSecret }}"
+#        force_basic_auth: true
+#        body_format: json
+#        body:
+#          subnet6:
+#            ddns_forward_zone: "{{ dns_forward_zone }}"
+#            ddns_dns_server: "{{ technitium_dns_server_ip }}"
+#            ddns_dns_port: 53
+#            ddns_domain_key_name: "{{ opnsense_tsig_name }}"
+#            ddns_domain_key_secret: "{{ opnsense_tsig_secret }}"
+#            ddns_domain_key_algorithm: "{{ opnsense_tsig_algorithm }}"
+#        status_code: 200
+#      loop: "{{ opnsense_dhcpv6_subnets.json.rows | default([]) }}"
+#      loop_control:
+#        label: "{{ item.subnet | default(item.uuid) }}"
+#      no_log: true
+#
+#    - name: Apply Kea configuration changes
+#      uri:
+#        url: "{{ opnsense.host }}/api/kea/service/reconfigure"
+#        method: POST
+#        url_username: "{{ opnsense.apiKey }}"
+#        url_password: "{{ opnsense.apiSecret }}"
+#        force_basic_auth: true
+#        status_code: 200
+#      no_log: true
