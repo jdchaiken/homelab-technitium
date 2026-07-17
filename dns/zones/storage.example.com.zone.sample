@@ -11,17 +11,12 @@ $TTL 300
 ; live zone by the deploy pipeline -- see example.com.zone for why.
         IN NS   ns1.storage.example.com.
         IN NS   ns2.storage.example.com.
-ns1     IN A    172.16.100.6
-ns2     IN A    172.16.100.8
+ns1     IN A    192.0.2.1
+ns2     IN A    192.0.2.2
 
 ; --- Bare-metal & Storage Infrastructure ---
-pbs     IN A    172.16.70.2
-pve01   IN A    172.16.70.204
-pve02   IN A    172.16.70.201
-pve03   IN A    172.16.70.203
-pve04   IN A    172.16.70.205
-nas01   IN A    172.16.70.241
-nas02   IN A    172.16.70.243
+; Add one A record per host, e.g.:
+example-host    IN A    192.0.2.10
 
 ; --- TXT registry for ExternalDNS coexistence ---
 externaldns IN TXT  "managed"

@@ -17,25 +17,12 @@ $TTL 300
 ; immediately after every import, same pattern as re-adding FWD.
             IN NS   ns1.example.com.
             IN NS   ns2.example.com.
-ns1         IN A    172.16.100.6
-ns2         IN A    172.16.100.8
+ns1         IN A    192.0.2.1
+ns2         IN A    192.0.2.2
 
 ; --- Internal LoadBalancer Services (manual records) ---
-argocd      IN A    10.30.0.1
-ldap        IN A    10.30.0.3
-git         IN A    10.30.0.4
-alloy       IN A    10.30.0.10
-files       IN A    172.16.100.241
-pve01       IN A    172.16.100.204
-pve02       IN A    172.16.100.201
-pve03       IN A    172.16.100.203
-pve04       IN A    172.16.100.205
-ups01       IN A    172.16.0.100
-idrac-pve02 IN A    172.16.0.146
-ratgdo      IN A    172.16.107.195
-sump-alarm  IN A    172.16.107.249
-pbs-remote  IN A    192.168.20.3
-opnsense    IN A    172.16.10.1
-omni        IN A    172.16.100.105
+; Add one A record per internal host/service you want Technitium to
+; answer authoritatively for, e.g.:
+example-host    IN A    192.0.2.10
 
 externaldns     IN TXT  "managed"
