@@ -60,4 +60,4 @@ __pycache__/
 scripts/*.out
 scripts/*.tmp
 
-.claude
+.claude/
