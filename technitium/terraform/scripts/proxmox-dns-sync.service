@@ -1,0 +1,8 @@
+[Unit]
+Description=Sync Proxmox VM/CT names+IPs into Technitium DNS
+After=network-online.target pve-cluster.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/infra/technitium/proxmox-dns-sync.sh
