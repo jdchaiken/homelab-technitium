@@ -102,3 +102,65 @@ genuinely narrow (four call sites, two secrets), so the mechanical
 refactor is quick. The real cost is testing a second backend to the same
 live-verified standard the rest of this project holds -- that's
 expected to take more time than the abstraction work itself.
+
+---
+
+# 2. Scaffold Every Technitium DNS App in configure-technitium-apps.yaml
+
+**Goal:** every DNS App Technitium's store actually offers gets a
+scaffold entry in `configure-technitium-apps.yaml` -- commented out by
+default like the existing ones, but with real, live-verified install
+endpoints and config field names ready to uncomment, not placeholders to
+fill in later.
+
+**Status:** proposed 2026-07-17, not started.
+
+## Investigation
+
+Pulled the real, current app catalog from a live instance
+(`GET /api/apps/listStoreApps`) rather than assuming the existing
+scaffolds already cover what's available -- 27 apps exist today. Only 6
+have any scaffold in the file:
+
+| Already scaffolded | State |
+| --- | --- |
+| Auto PTR | live/enabled |
+| Weighted Round Robin | live/enabled |
+| Query Logs (PostgreSQL) | live/enabled |
+| Advanced Blocking | commented scaffold |
+| Failover | commented scaffold |
+| Log Exporter | commented scaffold |
+
+**21 apps have no scaffold at all:** Advanced Forwarding, Block Page,
+Default Records, DNS64, DNS Block List (DNSBL), DNS Rebinding
+Protection, Drop Requests, Filter AAAA, Geo Continent, Geo Country, Geo
+Distance, NO DATA, NX Domain, NX Domain Override, Query Logs (MySQL),
+Query Logs (Sqlite), Query Logs (SQL Server), Split Horizon, What Is My
+Dns, Wild IP, Zone Alias.
+
+## Approach
+
+Same recipe already used for every existing scaffold in the file, not a
+new pattern -- per this project's standing rule, don't guess a config
+shape from an app's name:
+
+1. Install the app for real against a test instance
+   (`/api/apps/downloadAndInstall`).
+2. `GET /api/apps/config/get` to capture its actual default config (some
+   apps, like Auto PTR/Weighted Round Robin, turn out to need no config
+   at all -- confirmed live, not assumed; several of the 21 above look
+   like likely candidates for the same, e.g. Drop Requests, Filter
+   AAAA, NX Domain, NO DATA -- but that needs confirming per app, not
+   guessing from the name).
+3. Uninstall, write the scaffold task (install + config, matching the
+   existing file's structure/comments), commented out by default.
+
+## Effort
+
+Mechanical and well-understood (the pattern already exists 6 times over
+in this file) but not small purely by volume: 21 apps, each needing its
+own live install/inspect/uninstall cycle before the scaffold can be
+trusted. The three additional Query Logs backends (MySQL, Sqlite, SQL
+Server) are likely the fastest of the batch -- probably close siblings
+of the already-verified PostgreSQL one, but still worth confirming
+rather than assuming their config field names match exactly.
