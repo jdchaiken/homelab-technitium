@@ -13,6 +13,11 @@
     dns_hostname: "ns2.example.com"
     # ns1's stable IP -- the primary every Secondary zone below transfers from.
     primary_dns_server_ip: "172.16.100.6"
+    # Same zone_dir convention as configure-technitium.yaml -- ns2 doesn't
+    # need the file *content* (zones transfer from ns1 via AXFR), just the
+    # zone names, discovered the same way so no playbook edit is needed to
+    # add/remove a zone.
+    zone_dir: "/opt/infra/technitium/dns/zones"
 
   tasks:
     ###########################################################################
@@ -190,11 +195,18 @@
     # records) picks up ns2 automatically -- confirmed live via a real
     # instance's zones/options/get, not assumed.
     ###########################################################################
+    - name: Discover zone files
+      find:
+        paths: "{{ zone_dir }}"
+        patterns: "*.zone"
+      register: zone_files_found
+
+    - name: Compute zone names from discovered zone files
+      set_fact:
+        zone_names: "{{ zone_files_found.files | map(attribute='path') | map('basename') | map('regex_replace', '\\.zone$', '') | sort | list }}"
+
     - name: Create Secondary Forwarder zones transferring from ns1
-      loop:
-        - example.com
-        - example.net
-        - storage.example.com
+      loop: "{{ zone_names }}"
       loop_control:
         label: "{{ item }}"
       uri:
@@ -206,4 +218,4 @@
 
     - name: Confirm configuration applied
       debug:
-        msg: "Technitium configured as a Secondary Forwarder DNS server (ns2), transferring example.com/example.net/storage.example.com from {{ primary_dns_server_ip }}."
+        msg: "Technitium configured as a Secondary Forwarder DNS server (ns2), transferring {{ zone_names | join('/') }} from {{ primary_dns_server_ip }}."

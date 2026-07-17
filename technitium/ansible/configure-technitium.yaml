@@ -375,16 +375,28 @@
     # those NS records from the live zone after every import/create, which
     # fully fixed it -- verified by direct DNS queries against both ns1 and
     # ns2 before/after. See AI.md for the full incident writeup.
+    #
+    # The zone list is discovered from zone_dir rather than hardcoded, so
+    # adding/removing a zone is just adding/removing a .zone file -- no
+    # playbook edit needed. See AI.md.
     ###########################################################################
+    - name: Discover zone files
+      find:
+        paths: "{{ zone_dir }}"
+        patterns: "*.zone"
+      register: zone_files_found
+
+    - name: Compute zone names from discovered zone files
+      set_fact:
+        zone_names: "{{ zone_files_found.files | map(attribute='path') | map('basename') | map('regex_replace', '\\.zone$', '') | sort | list }}"
+
     - name: Create Technitium zones from zone files
-      loop:
-        - example.com.zone
-        - example.net.zone
-        - storage.example.com.zone
+      loop: "{{ zone_files_found.files }}"
       loop_control:
-        label: "{{ item }}"
+        label: "{{ item.path | basename }}"
       vars:
-        zone_name: "{{ item | regex_replace('\\.zone$', '') }}"
+        zone_filename: "{{ item.path | basename }}"
+        zone_name: "{{ zone_filename | regex_replace('\\.zone$', '') }}"
       uri:
         url: "{{ technitium_api }}/zones/create?zone={{ zone_name }}&type=Forwarder&forwarder={{ upstream_resolver_ip }}&protocol=Udp&dnssecValidation=false"
         method: POST
@@ -393,8 +405,8 @@
         body_format: form-multipart
         body:
           zoneFile:
-            filename: "{{ item }}"
-            content: "{{ lookup('file', zone_dir + '/' + item) }}"
+            filename: "{{ zone_filename }}"
+            content: "{{ lookup('file', item.path) }}"
             mime_type: text/plain
         status_code: 200
 
@@ -402,10 +414,7 @@
     # 11a. RE-ADD THE FWD RECORD (zone-file import above deleted it)
     ###########################################################################
     - name: Re-add FWD record for split-DNS forwarding after zone file import
-      loop:
-        - example.com
-        - example.net
-        - storage.example.com
+      loop: "{{ zone_names }}"
       loop_control:
         label: "{{ item }}"
       uri:
@@ -431,10 +440,7 @@
     # resolved correctly through the FWD path. See AI.md.
     ###########################################################################
     - name: Delete self-referential ns1 NS record from each zone
-      loop:
-        - example.com
-        - example.net
-        - storage.example.com
+      loop: "{{ zone_names }}"
       loop_control:
         label: "{{ item }}"
       uri:
@@ -445,10 +451,7 @@
         status_code: 200
 
     - name: Delete self-referential ns2 NS record from each zone
-      loop:
-        - example.com
-        - example.net
-        - storage.example.com
+      loop: "{{ zone_names }}"
       loop_control:
         label: "{{ item }}"
       uri:
@@ -500,10 +503,7 @@
     # directly.
     ###########################################################################
     - name: Enable dynamic updates (RFC2136) on each zone
-      loop:
-        - example.com
-        - example.net
-        - storage.example.com
+      loop: "{{ zone_names }}"
       loop_control:
         label: "{{ item }}"
       uri:

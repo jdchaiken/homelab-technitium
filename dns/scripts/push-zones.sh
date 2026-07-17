@@ -11,7 +11,13 @@ set -e
 cd "$(dirname "$0")/.."
 
 TECHNITIUM_IP="172.16.100.6"
-ZONES=(example.com example.net storage.example.com)
+
+# Discovered from zone_dir rather than hardcoded, so adding/removing a zone
+# is just adding/removing a .zone file -- no script edit needed.
+ZONES=()
+for f in zones/*.zone; do
+    ZONES+=("$(basename "$f" .zone)")
+done
 
 echo "Pushing zone files to live Technitium (${TECHNITIUM_IP})..."
 
