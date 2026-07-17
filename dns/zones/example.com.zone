@@ -1,6 +1,6 @@
 $TTL 300
 @       IN SOA  ns1.example.com. admin.example.com. (
-            2026071604 ; serial
+            2026071701 ; serial
             3600
             1800
             604800
@@ -16,18 +16,17 @@ ns2         IN A    172.16.100.8
 ldap        IN A    10.30.0.3
 git         IN A    10.30.0.4
 alloy       IN A    10.30.0.10
-nas01       IN A    172.16.100.241
 files       IN A    172.16.100.241
-postgresql  IN A    172.16.100.102
-pbs         IN A    172.16.100.2
 pve01       IN A    172.16.100.204
 pve02       IN A    172.16.100.201
 pve03       IN A    172.16.100.203
 pve04       IN A    172.16.100.205
-omada       IN A    172.16.0.101
-docker01    IN A    172.16.0.103
+; docker02 stays manual: currently stopped with no static IP configured,
+; so proxmox-dns-sync.sh can't determine its address (confirmed -- it
+; never appears in the sync's discovered list). Give it a static
+; ipconfig or leave it running with the guest agent for the sync to
+; pick it up, then remove this line.
 docker02    IN A    172.16.0.104
-docker03    IN A    172.16.0.105
 ups01       IN A    172.16.0.100
 idrac-pve02 IN A    172.16.0.146
 ratgdo      IN A    172.16.107.195

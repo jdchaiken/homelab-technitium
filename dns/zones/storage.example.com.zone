@@ -1,6 +1,6 @@
 $TTL 300
 @       IN SOA  ns1.storage.example.com. admin.storage.example.com. (
-            2026071604 ; serial
+            2026071701 ; serial
             3600       ; refresh
             1800       ; retry
             604800     ; expire

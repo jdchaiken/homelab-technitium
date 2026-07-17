@@ -18,36 +18,42 @@
 # the next timer fire on any surviving node picks it up within one
 # 15-minute cycle, no manual failover needed.
 #
-# IP discovery, per VM/CT type:
-#   - qemu (VM): QEMU guest agent (`qm guest cmd <vmid>
-#     network-get-interfaces`) if the VM is running and the agent
-#     responds -- picks the first non-loopback, non-link-local IPv4.
-#     Falls back to the static IP in `ipconfig0` (qm config) if the agent
-#     is unavailable/not installed/VM stopped.
-#   - lxc (container): static IP from `net0` in `pct config` -- LXC guest
-#     agent introspection isn't as standardized as QEMU's, so this only
+# IP discovery, per VM/CT type -- all through `pvesh` (the cluster-wide
+# REST API), never bare `qm`/`pct`: those are node-local and only work
+# for VMs/CTs actually running on the node you invoke them from, but
+# this script runs from a single node at a time while VMs are spread
+# across all four (confirmed live: `pvesh get /nodes/<node>/...` proxies
+# to whichever node actually holds that VM/CT, regardless of which node
+# you run it from):
+#   - qemu (VM): QEMU guest agent
+#     (`/nodes/<node>/qemu/<vmid>/agent/network-get-interfaces`) if the
+#     VM is running and the agent responds -- picks the first
+#     non-loopback, non-link-local IPv4. Falls back to the static IP in
+#     `ipconfig0` (`/nodes/<node>/qemu/<vmid>/config`) if the agent is
+#     unavailable/not installed/VM stopped.
+#   - lxc (container): static IP from `net0`
+#     (`/nodes/<node>/lxc/<vmid>/config`) -- LXC guest agent
+#     introspection isn't as standardized as QEMU's, so this only
 #     handles static configs. DHCP-assigned containers are skipped (no
 #     way to determine the IP without an agent).
 #
-# Reconciliation, not blind overwrite: a local state file
-# (STATE_FILE below) tracks exactly which hostnames THIS script
-# previously published. Only those get updated or removed on each run --
-# a VM/CT this script has never seen is added fresh; a hostname that
-# disappears from Proxmox (destroyed VM) gets its DNS record removed;
-# anything NOT in the state file (manually created records, or records
-# from ExternalDNS/Kea) is never touched. This is deliberately similar to
-# ExternalDNS's TXT-record ownership tracking, just via a local file
-# instead of an in-zone marker, since this script authenticates as full
-# admin (not a scoped dynamic-update client) and a mistaken bulk-delete
-# would be a lot more damaging here than it would be for ExternalDNS.
+# Proxmox's own cluster NODES (pve01-04 themselves) are never covered by
+# any of this -- `/cluster/resources --type vm` only returns VMs/CTs, not
+# nodes, so they always need a manual zone-file entry regardless of what
+# else this script picks up.
 #
-# Known overlap: pve01-04, docker01-03, and nas01 are both real Proxmox
-# VMs/nodes AND already hand-maintained in dns/zones/example.com.zone
-# (re-imported on every ns1 rebuild). Until those manual entries are
-# removed from the zone file, both sources are managing the same names --
-# this script's writes will win between rebuilds, the zone file's import
-# will win at rebuild time. Confirm this sync is reliable before removing
-# the manual entries.
+# Reconciliation, not blind overwrite: a state file (STATE_FILE below,
+# in cluster storage alongside the script) tracks exactly which
+# hostnames THIS script previously published. Only those get updated or
+# removed on each run -- a VM/CT this script has never seen is added
+# fresh; a hostname that disappears from Proxmox (destroyed VM) gets its
+# DNS record removed; anything NOT in the state file (manually created
+# records, or records from ExternalDNS/Kea) is never touched. This is
+# deliberately similar to ExternalDNS's TXT-record ownership tracking,
+# just via a local file instead of an in-zone marker, since this script
+# authenticates as full admin (not a scoped dynamic-update client) and a
+# mistaken bulk-delete would be a lot more damaging here than it would
+# be for ExternalDNS.
 set -euo pipefail
 
 CLUSTER_DIR="/etc/pve/technitium"

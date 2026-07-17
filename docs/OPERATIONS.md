@@ -140,12 +140,13 @@ Config overrides (Technitium API URL, target zone) live in
 Only ever touches records it created itself, tracked in a state file in
 the same cluster-storage directory
 (`/etc/pve/technitium/proxmox-dns-sync-state.json`) -- never touches
-manually-created records or records from ExternalDNS/Kea. VMs whose name
-collides with a manually-maintained zone-file entry (`pve01-04`,
-`docker01-03`, `nas01`, `omada`, `postgresql` as of this writing) are
-managed by both until those entries are removed from the zone file -- the
-sync's writes win day-to-day, the zone file's import wins at the next
-`make deploy`.
+manually-created records or records from ExternalDNS/Kea. The overlap
+with hand-maintained zone-file entries (`nas01`, `postgresql`, `pbs`,
+`omada`, `docker01`, `docker03`) was resolved 2026-07-17 by removing
+those specific lines from `dns/zones/example.com.zone` -- the sync is
+now their only source. `pve01-04` (the Proxmox nodes themselves) and
+`docker02` (currently stopped, no static IP) are NOT covered by the sync
+and correctly remain manual -- see the in-script comment for why.
 
 ---
 
