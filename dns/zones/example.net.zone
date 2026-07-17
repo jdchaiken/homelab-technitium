@@ -1,6 +1,6 @@
 $TTL 300
 @       IN SOA  ns1.example.net. admin.example.net. (
-            2026071701 ; serial
+            2026071703 ; serial
             3600
             1800
             604800

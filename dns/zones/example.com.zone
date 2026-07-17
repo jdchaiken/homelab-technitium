@@ -1,6 +1,6 @@
 $TTL 300
 @       IN SOA  ns1.example.com. admin.example.com. (
-            2026071701 ; serial
+            2026071703 ; serial
             3600
             1800
             604800
@@ -32,5 +32,6 @@ idrac-pve02 IN A    172.16.0.146
 ratgdo      IN A    172.16.107.195
 sump-alarm  IN A    172.16.107.249
 pbs-remote  IN A    192.168.20.3
+opnsense    IN A    172.16.10.1
 
 externaldns     IN TXT  "managed"
