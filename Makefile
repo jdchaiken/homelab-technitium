@@ -79,9 +79,28 @@ sync-snippets: ## Sync the cloud-init snippets to Proxmox shared storage
 		scp technitium/cloud-init/local/technitium-user-ns2.yaml root@$$PM_NODE:/mnt/pve/tank/snippets/technitium-user-ns2.yaml
 
 ###############################################################################
+# Sync VMID Allocation Scripts
+#
+# /opt/infra/technitium on pm_node is NOT a git checkout -- it's just these
+# two standalone scripts, placed there manually. Nothing else in this repo
+# syncs them, so without this step a change to next-vmid.sh or
+# current-prod-vmid.sh in git would silently never reach the node that
+# actually runs them (main.tf/ns2.tf invoke them over SSH by this exact
+# path). Confirmed live 2026-07-19: the copy on pve02 predates the latest
+# git version with no automated path keeping them in sync.
+###############################################################################
+sync-scripts: ## Sync the VMID allocation scripts to pm_node
+		@PM_NODE=$$(grep '^pm_node' technitium/terraform/local/terraform.tfvars | sed -E 's/.*"([^"]+)".*/\1/'); \
+		echo "$(BLUE)Syncing next-vmid.sh / current-prod-vmid.sh to $$PM_NODE:/opt/infra/technitium/...$(RESET)"; \
+		ssh root@$$PM_NODE 'mkdir -p /opt/infra/technitium'; \
+		scp technitium/terraform/scripts/next-vmid.sh root@$$PM_NODE:/opt/infra/technitium/next-vmid.sh; \
+		scp technitium/terraform/scripts/current-prod-vmid.sh root@$$PM_NODE:/opt/infra/technitium/current-prod-vmid.sh; \
+		ssh root@$$PM_NODE 'chmod +x /opt/infra/technitium/next-vmid.sh /opt/infra/technitium/current-prod-vmid.sh'
+
+###############################################################################
 # Terraform Deployment (Full GitOps Flow)
 ###############################################################################
-deploy: sync-snippets ## Deploy Technitium DNS via Terraform (VM create, Ansible via Terraform remote-exec, DNS cutover — all handled by Terraform)
+deploy: sync-snippets sync-scripts ## Deploy Technitium DNS via Terraform (VM create, Ansible via Terraform remote-exec, DNS cutover — all handled by Terraform)
 		cd technitium/terraform && terraform init
 		# Explicit workspace select: without this, a prior `make deploy-staging`
 		# in this same checkout would leave the CLI pointed at the "staging"
@@ -115,7 +134,7 @@ deploy: sync-snippets ## Deploy Technitium DNS via Terraform (VM create, Ansible
 # Let's Encrypt staging ACME server, separate NFS cert subfolder, and
 # reusing -- not regenerating -- production's real TSIG key).
 ###############################################################################
-deploy-staging: sync-snippets ## Deploy the staging Technitium environment for pre-deploy testing
+deploy-staging: sync-snippets sync-scripts ## Deploy the staging Technitium environment for pre-deploy testing
 		cd technitium/terraform && terraform init
 		cd technitium/terraform && terraform workspace select staging || terraform workspace new staging
 		cd technitium/terraform && terraform apply -auto-approve -var-file=local/staging.tfvars
@@ -225,6 +244,6 @@ bootstrap:
 ###############################################################################
 # Phony Targets
 ###############################################################################
-.PHONY: install configure rebuild validate-zones pull sync-snippets deploy \
+.PHONY: install configure rebuild validate-zones pull sync-snippets sync-scripts deploy \
 		verify-dev install-dev scan-secrets verify-secrets lint help \
 		install-hooks test-hooks verify-hooks update-zones push-zones
