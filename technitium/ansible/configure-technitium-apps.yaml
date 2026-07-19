@@ -540,6 +540,7 @@
 #      uri:
 #        url: "{{ technitium_api }}/admin/sso/set"
 #        method: POST
+#        validate_certs: false
 #        headers:
 #          Authorization: "Bearer {{ technitium_session_token }}"
 #        body_format: form-urlencoded
