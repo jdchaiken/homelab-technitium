@@ -14,6 +14,19 @@
 
 data "external" "ns2_vmid" {
   program = ["ssh", "root@${var.pm_node}", "/opt/infra/technitium/next-vmid.sh"]
+
+  # next-vmid.sh picks max(existing VMIDs in range)+1 with no locking --
+  # when technitium_temp and technitium_ns2_temp are both being created in
+  # the same apply (e.g. staging), Terraform evaluates both data sources in
+  # parallel before either VM actually exists, so both computed the SAME
+  # "next" ID and collided on clone ("config file already exists").
+  # Confirmed live 2026-07-19. depends_on forces this lookup to wait until
+  # technitium_temp is actually created (VMID really allocated, not just
+  # planned) before asking for ns2's ID. Only has any effect when both temp
+  # VMs are created in the same apply -- a normal ns2-only rebuild (bumping
+  # ns2_rebuild_id alone) never touches technitium_temp, so this adds no
+  # wait in the common case.
+  depends_on = [proxmox_virtual_environment_vm.technitium_temp]
 }
 
 data "external" "ns2_current_prod_vmid" {
