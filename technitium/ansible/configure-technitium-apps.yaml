@@ -1,10 +1,11 @@
 # Optional Technitium DNS Apps + SSO + OPNsense TSIG sync.
 #
-# Auto PTR and Weighted Round Robin (below) are LIVE -- wired into
-# technitium/terraform/main.tf's remote-exec chain, right after
-# configure-technitium-tls.yaml, so they install on every rebuild.
-# Everything else in this file is still a commented-out scaffold. To enable
-# another app:
+# Every DNS App in this file (Auto PTR, Weighted Round Robin, Query Logs
+# (PostgreSQL), Advanced Blocking, Failover, Log Exporter) and SSO is a
+# commented-out scaffold -- nothing installs by default on a fresh
+# deployment from this repo. The OPNsense TSIG sync section near the end is
+# the only part of this file that's still live, since it's core DDNS
+# plumbing rather than an optional app. To enable an app:
 #   1. Uncomment it (strip the leading "#" from each line, keeping the rest
 #      of the line -- e.g. `sed -i 's/^#//' this_file.yaml` on a copy, or
 #      your editor's "toggle block comment").
@@ -122,210 +123,210 @@
         technitium_session_token: "{{ apps_login.json.token }}"
       no_log: true
 
-    ###########################################################################
-    # AUTO PTR -- generates PTR records automatically for A/AAAA records in
-    # primary/forwarder zones. Confirmed live: this app has no config file
-    # at all (GET config returns "#This app requires no config.").
-    ###########################################################################
-    - name: Install Auto PTR app
-      uri:
-        url: "{{ technitium_api }}/apps/downloadAndInstall"
-        method: POST
-        validate_certs: false
-        headers:
-          Authorization: "Bearer {{ technitium_session_token }}"
-        body_format: form-urlencoded
-        body:
-          name: "Auto PTR"
-          url: "https://download.technitium.com/dns/apps/AutoPtrApp-v5.zip"
-        status_code: 200
-
-    ###########################################################################
-    # WEIGHTED ROUND ROBIN -- APP records that distribute answers across
-    # multiple IPs by weight. Also no config file (confirmed live).
-    ###########################################################################
-    - name: Install Weighted Round Robin app
-      uri:
-        url: "{{ technitium_api }}/apps/downloadAndInstall"
-        method: POST
-        validate_certs: false
-        headers:
-          Authorization: "Bearer {{ technitium_session_token }}"
-        body_format: form-urlencoded
-        body:
-          name: "Weighted Round Robin"
-          url: "https://download.technitium.com/dns/apps/WeightedRoundRobinApp-v5.zip"
-        status_code: 200
-
-    ###########################################################################
-    # QUERY LOGS (POSTGRESQL) -- replaces the default query log storage with
-    # PostgreSQL. server/username/password/port/databaseName all come from
-    # ONE JSON-encoded bw.env secret (TECHNITIUM_QUERYLOGS_PG_CONFIG), same
-    # pattern as TECHNITIUM_SSO_CONFIG/OPNSENSE_API_CONFIG below -- keeps
-    # the whole connection config out of this file and out of bw.env as
-    # loose fragments, not just the password.
-    ###########################################################################
-    - name: Parse PostgreSQL config secret (single JSON secret, keys extracted from it)
-      set_fact:
-        querylogs_pg: "{{ (bw_env_raw | regex_search('TECHNITIUM_QUERYLOGS_PG_CONFIG=(.+)', '\\1') | first) | from_json }}"
-      no_log: true
-
-    - name: Install Query Logs (PostgreSQL) app
-      uri:
-        url: "{{ technitium_api }}/apps/downloadAndInstall"
-        method: POST
-        validate_certs: false
-        headers:
-          Authorization: "Bearer {{ technitium_session_token }}"
-        body_format: form-urlencoded
-        body:
-          name: "Query Logs (PostgreSQL)"
-          url: "https://download.technitium.com/dns/apps/QueryLogsPostgreSqlApp-v1.2.1.zip"
-        status_code: 200
-
-    # First real end-to-end run of this task (2026-07-16) installed the app
-    # but left it on its factory-default config even though config/set
-    # returned HTTP 200. A fixed 5s pause + single config/set + single
-    # verify was NOT enough to make this deterministic -- confirmed live
-    # across two separate real deploys with identical code: one landed with
-    # the real config applied, the next landed back on factory defaults.
-    # This is a genuine intermittent race (most likely the app not being
-    # fully ready to durably persist a config write immediately after
-    # downloadAndInstall returns), not a one-time fluke or a logic bug --
-    # so the fix is a retry that can re-issue the WRITE, not just wait
-    # longer for the same write to "become visible". block/rescue: try
-    # once; if the config still doesn't reflect what was sent, rescue
-    # re-issues config/set once more before failing the playbook for real.
-    # Debug output is duplicated in both block and rescue (rather than
-    # placed after) so it prints on every path, including the final
-    # failure -- a debug task placed after a failing block/rescue would
-    # never be reached at all.
-    - name: Wait for the newly installed app to finish loading before configuring it
-      ansible.builtin.pause:
-        seconds: 5
-
-    - name: Configure and verify Query Logs (PostgreSQL) config, retrying the write once if it didn't stick
-      block:
-        - name: Configure Query Logs (PostgreSQL) app
-          uri:
-            url: "{{ technitium_api }}/apps/config/set"
-            method: POST
-            validate_certs: false
-            headers:
-              Authorization: "Bearer {{ technitium_session_token }}"
-            body_format: form-urlencoded
-            body:
-              name: "Query Logs (PostgreSQL)"
-              config: |
-                {
-                  "enableLogging": true,
-                  "maxQueueSize": 1000000,
-                  "maxLogDays": 30,
-                  "maxLogRecords": 0,
-                  "databaseName": "{{ querylogs_pg.databaseName }}",
-                  "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
-                }
-            status_code: 200
-          no_log: true
-
-        - name: Wait a moment before checking
-          ansible.builtin.pause:
-            seconds: 5
-
-        # apps/config/get wraps its field under "response" (unlike
-        # /user/login and /user/createToken, which return "token" flat) --
-        # confirmed live: {"response": {"config": "..."}, "server": ...,
-        # "status": "ok"}.
-        - name: Get Query Logs (PostgreSQL) config
-          uri:
-            url: "{{ technitium_api }}/apps/config/get?name=Query%20Logs%20(PostgreSQL)"
-            method: GET
-            validate_certs: false
-            headers:
-              Authorization: "Bearer {{ technitium_session_token }}"
-            status_code: 200
-          register: querylogs_verify
-          no_log: true
-
-        - name: Parse verify response (connectionString/password never leave this fact)
-          set_fact:
-            querylogs_verify_parsed: "{{ querylogs_verify.json.response.config | from_json }}"
-          no_log: true
-
-        # Deliberately not no_log: databaseName/enableLogging/maxLogDays
-        # aren't secrets, and printing them is what lets a failure here be
-        # diagnosed from the deploy output instead of guessed at blind.
-        # connectionString (which does carry the password) is excluded on
-        # purpose -- never reference it here.
-        - name: Show non-secret Query Logs config fields for debugging (first attempt)
-          debug:
-            msg:
-              enableLogging: "{{ querylogs_verify_parsed.enableLogging }}"
-              maxLogDays: "{{ querylogs_verify_parsed.maxLogDays }}"
-              databaseName: "{{ querylogs_verify_parsed.databaseName }}"
-
-        - name: Assert Query Logs (PostgreSQL) config was actually applied
-          assert:
-            that:
-              - querylogs_verify_parsed.maxLogDays == 30
-            fail_msg: "Query Logs (PostgreSQL) config did not persist on the first attempt -- retrying config/set once (see fields printed above)."
-            success_msg: "Query Logs (PostgreSQL) config verified as applied."
-      rescue:
-        - name: First attempt didn't stick -- re-issue config/set once more
-          uri:
-            url: "{{ technitium_api }}/apps/config/set"
-            method: POST
-            validate_certs: false
-            headers:
-              Authorization: "Bearer {{ technitium_session_token }}"
-            body_format: form-urlencoded
-            body:
-              name: "Query Logs (PostgreSQL)"
-              config: |
-                {
-                  "enableLogging": true,
-                  "maxQueueSize": 1000000,
-                  "maxLogDays": 30,
-                  "maxLogRecords": 0,
-                  "databaseName": "{{ querylogs_pg.databaseName }}",
-                  "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
-                }
-            status_code: 200
-          no_log: true
-
-        - name: Wait a moment before checking again
-          ansible.builtin.pause:
-            seconds: 5
-
-        - name: Get Query Logs (PostgreSQL) config again
-          uri:
-            url: "{{ technitium_api }}/apps/config/get?name=Query%20Logs%20(PostgreSQL)"
-            method: GET
-            validate_certs: false
-            headers:
-              Authorization: "Bearer {{ technitium_session_token }}"
-            status_code: 200
-          register: querylogs_verify_retry
-          no_log: true
-
-        - name: Parse retry verify response (connectionString/password never leave this fact)
-          set_fact:
-            querylogs_verify_retry_parsed: "{{ querylogs_verify_retry.json.response.config | from_json }}"
-          no_log: true
-
-        - name: Show non-secret Query Logs config fields for debugging (retry attempt)
-          debug:
-            msg:
-              enableLogging: "{{ querylogs_verify_retry_parsed.enableLogging }}"
-              maxLogDays: "{{ querylogs_verify_retry_parsed.maxLogDays }}"
-              databaseName: "{{ querylogs_verify_retry_parsed.databaseName }}"
-
-        - name: Assert Query Logs (PostgreSQL) config was actually applied after retry
-          assert:
-            that:
-              - querylogs_verify_retry_parsed.maxLogDays == 30
-            fail_msg: "Query Logs (PostgreSQL) config still not applied after retrying config/set once -- see fields printed above, needs real investigation."
-            success_msg: "Query Logs (PostgreSQL) config verified as applied after one retry."
+#    ###########################################################################
+#    # AUTO PTR -- generates PTR records automatically for A/AAAA records in
+#    # primary/forwarder zones. Confirmed live: this app has no config file
+#    # at all (GET config returns "#This app requires no config.").
+#    ###########################################################################
+#    - name: Install Auto PTR app
+#      uri:
+#        url: "{{ technitium_api }}/apps/downloadAndInstall"
+#        method: POST
+#        validate_certs: false
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Auto PTR"
+#          url: "https://download.technitium.com/dns/apps/AutoPtrApp-v5.zip"
+#        status_code: 200
+#
+#    ###########################################################################
+#    # WEIGHTED ROUND ROBIN -- APP records that distribute answers across
+#    # multiple IPs by weight. Also no config file (confirmed live).
+#    ###########################################################################
+#    - name: Install Weighted Round Robin app
+#      uri:
+#        url: "{{ technitium_api }}/apps/downloadAndInstall"
+#        method: POST
+#        validate_certs: false
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Weighted Round Robin"
+#          url: "https://download.technitium.com/dns/apps/WeightedRoundRobinApp-v5.zip"
+#        status_code: 200
+#
+#    ###########################################################################
+#    # QUERY LOGS (POSTGRESQL) -- replaces the default query log storage with
+#    # PostgreSQL. server/username/password/port/databaseName all come from
+#    # ONE JSON-encoded bw.env secret (TECHNITIUM_QUERYLOGS_PG_CONFIG), same
+#    # pattern as TECHNITIUM_SSO_CONFIG/OPNSENSE_API_CONFIG below -- keeps
+#    # the whole connection config out of this file and out of bw.env as
+#    # loose fragments, not just the password.
+#    ###########################################################################
+#    - name: Parse PostgreSQL config secret (single JSON secret, keys extracted from it)
+#      set_fact:
+#        querylogs_pg: "{{ (bw_env_raw | regex_search('TECHNITIUM_QUERYLOGS_PG_CONFIG=(.+)', '\\1') | first) | from_json }}"
+#      no_log: true
+#
+#    - name: Install Query Logs (PostgreSQL) app
+#      uri:
+#        url: "{{ technitium_api }}/apps/downloadAndInstall"
+#        method: POST
+#        validate_certs: false
+#        headers:
+#          Authorization: "Bearer {{ technitium_session_token }}"
+#        body_format: form-urlencoded
+#        body:
+#          name: "Query Logs (PostgreSQL)"
+#          url: "https://download.technitium.com/dns/apps/QueryLogsPostgreSqlApp-v1.2.1.zip"
+#        status_code: 200
+#
+#    # First real end-to-end run of this task (2026-07-16) installed the app
+#    # but left it on its factory-default config even though config/set
+#    # returned HTTP 200. A fixed 5s pause + single config/set + single
+#    # verify was NOT enough to make this deterministic -- confirmed live
+#    # across two separate real deploys with identical code: one landed with
+#    # the real config applied, the next landed back on factory defaults.
+#    # This is a genuine intermittent race (most likely the app not being
+#    # fully ready to durably persist a config write immediately after
+#    # downloadAndInstall returns), not a one-time fluke or a logic bug --
+#    # so the fix is a retry that can re-issue the WRITE, not just wait
+#    # longer for the same write to "become visible". block/rescue: try
+#    # once; if the config still doesn't reflect what was sent, rescue
+#    # re-issues config/set once more before failing the playbook for real.
+#    # Debug output is duplicated in both block and rescue (rather than
+#    # placed after) so it prints on every path, including the final
+#    # failure -- a debug task placed after a failing block/rescue would
+#    # never be reached at all.
+#    - name: Wait for the newly installed app to finish loading before configuring it
+#      ansible.builtin.pause:
+#        seconds: 5
+#
+#    - name: Configure and verify Query Logs (PostgreSQL) config, retrying the write once if it didn't stick
+#      block:
+#        - name: Configure Query Logs (PostgreSQL) app
+#          uri:
+#            url: "{{ technitium_api }}/apps/config/set"
+#            method: POST
+#            validate_certs: false
+#            headers:
+#              Authorization: "Bearer {{ technitium_session_token }}"
+#            body_format: form-urlencoded
+#            body:
+#              name: "Query Logs (PostgreSQL)"
+#              config: |
+#                {
+#                  "enableLogging": true,
+#                  "maxQueueSize": 1000000,
+#                  "maxLogDays": 30,
+#                  "maxLogRecords": 0,
+#                  "databaseName": "{{ querylogs_pg.databaseName }}",
+#                  "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
+#                }
+#            status_code: 200
+#          no_log: true
+#
+#        - name: Wait a moment before checking
+#          ansible.builtin.pause:
+#            seconds: 5
+#
+#        # apps/config/get wraps its field under "response" (unlike
+#        # /user/login and /user/createToken, which return "token" flat) --
+#        # confirmed live: {"response": {"config": "..."}, "server": ...,
+#        # "status": "ok"}.
+#        - name: Get Query Logs (PostgreSQL) config
+#          uri:
+#            url: "{{ technitium_api }}/apps/config/get?name=Query%20Logs%20(PostgreSQL)"
+#            method: GET
+#            validate_certs: false
+#            headers:
+#              Authorization: "Bearer {{ technitium_session_token }}"
+#            status_code: 200
+#          register: querylogs_verify
+#          no_log: true
+#
+#        - name: Parse verify response (connectionString/password never leave this fact)
+#          set_fact:
+#            querylogs_verify_parsed: "{{ querylogs_verify.json.response.config | from_json }}"
+#          no_log: true
+#
+#        # Deliberately not no_log: databaseName/enableLogging/maxLogDays
+#        # aren't secrets, and printing them is what lets a failure here be
+#        # diagnosed from the deploy output instead of guessed at blind.
+#        # connectionString (which does carry the password) is excluded on
+#        # purpose -- never reference it here.
+#        - name: Show non-secret Query Logs config fields for debugging (first attempt)
+#          debug:
+#            msg:
+#              enableLogging: "{{ querylogs_verify_parsed.enableLogging }}"
+#              maxLogDays: "{{ querylogs_verify_parsed.maxLogDays }}"
+#              databaseName: "{{ querylogs_verify_parsed.databaseName }}"
+#
+#        - name: Assert Query Logs (PostgreSQL) config was actually applied
+#          assert:
+#            that:
+#              - querylogs_verify_parsed.maxLogDays == 30
+#            fail_msg: "Query Logs (PostgreSQL) config did not persist on the first attempt -- retrying config/set once (see fields printed above)."
+#            success_msg: "Query Logs (PostgreSQL) config verified as applied."
+#      rescue:
+#        - name: First attempt didn't stick -- re-issue config/set once more
+#          uri:
+#            url: "{{ technitium_api }}/apps/config/set"
+#            method: POST
+#            validate_certs: false
+#            headers:
+#              Authorization: "Bearer {{ technitium_session_token }}"
+#            body_format: form-urlencoded
+#            body:
+#              name: "Query Logs (PostgreSQL)"
+#              config: |
+#                {
+#                  "enableLogging": true,
+#                  "maxQueueSize": 1000000,
+#                  "maxLogDays": 30,
+#                  "maxLogRecords": 0,
+#                  "databaseName": "{{ querylogs_pg.databaseName }}",
+#                  "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
+#                }
+#            status_code: 200
+#          no_log: true
+#
+#        - name: Wait a moment before checking again
+#          ansible.builtin.pause:
+#            seconds: 5
+#
+#        - name: Get Query Logs (PostgreSQL) config again
+#          uri:
+#            url: "{{ technitium_api }}/apps/config/get?name=Query%20Logs%20(PostgreSQL)"
+#            method: GET
+#            validate_certs: false
+#            headers:
+#              Authorization: "Bearer {{ technitium_session_token }}"
+#            status_code: 200
+#          register: querylogs_verify_retry
+#          no_log: true
+#
+#        - name: Parse retry verify response (connectionString/password never leave this fact)
+#          set_fact:
+#            querylogs_verify_retry_parsed: "{{ querylogs_verify_retry.json.response.config | from_json }}"
+#          no_log: true
+#
+#        - name: Show non-secret Query Logs config fields for debugging (retry attempt)
+#          debug:
+#            msg:
+#              enableLogging: "{{ querylogs_verify_retry_parsed.enableLogging }}"
+#              maxLogDays: "{{ querylogs_verify_retry_parsed.maxLogDays }}"
+#              databaseName: "{{ querylogs_verify_retry_parsed.databaseName }}"
+#
+#        - name: Assert Query Logs (PostgreSQL) config was actually applied after retry
+#          assert:
+#            that:
+#              - querylogs_verify_retry_parsed.maxLogDays == 30
+#            fail_msg: "Query Logs (PostgreSQL) config still not applied after retrying config/set once -- see fields printed above, needs real investigation."
+#            success_msg: "Query Logs (PostgreSQL) config verified as applied after one retry."
 #    ###########################################################################
 #    # ADVANCED BLOCKING -- per-client/per-network blocking groups, each with
 #    # its own allow/block lists. No secrets involved. The config below is the
