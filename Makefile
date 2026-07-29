@@ -98,6 +98,18 @@ sync-scripts: ## Sync the VMID allocation scripts to pm_node
 		ssh root@$$PM_NODE 'chmod +x /opt/infra/technitium/next-vmid.sh /opt/infra/technitium/current-prod-vmid.sh'
 
 ###############################################################################
+# Generate Consolidated Config
+#
+# Single source of truth for everything that used to mean hand-editing
+# bw.env, terraform.tfvars, staging.tfvars, technitium-user.yaml, and
+# technitium-user-ns2.yaml separately. Edit secrets/deployment.env, then run
+# this to regenerate all five. Does not cover configure-technitium-apps.yaml's
+# optional DNS Apps -- those are still enabled/disabled by hand.
+###############################################################################
+generate-config: ## Regenerate bw.env/tfvars/cloud-init files from secrets/deployment.env
+		./scripts/generate-config.sh
+
+###############################################################################
 # Terraform Deployment (Full GitOps Flow)
 ###############################################################################
 deploy: sync-snippets sync-scripts ## Deploy Technitium DNS via Terraform (VM create, Ansible via Terraform remote-exec, DNS cutover — all handled by Terraform)
@@ -246,4 +258,4 @@ bootstrap:
 ###############################################################################
 .PHONY: install configure rebuild validate-zones pull sync-snippets sync-scripts deploy \
 		verify-dev install-dev scan-secrets verify-secrets lint help \
-		install-hooks test-hooks verify-hooks update-zones push-zones
+		install-hooks test-hooks verify-hooks update-zones push-zones generate-config

@@ -26,6 +26,10 @@ terraform.rc
 ### Bitwarden ###
 secrets/bw.env
 
+### Consolidated deployment config (generates bw.env, *.tfvars, cloud-init
+### local/*.yaml -- see scripts/generate-config.sh) ###
+secrets/deployment.env
+
 ### Cloud-init ###
 *.cidata
 cloud-init-output.log
