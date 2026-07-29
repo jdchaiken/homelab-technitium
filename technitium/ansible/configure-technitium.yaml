@@ -4,12 +4,13 @@
   become: true
   gather_facts: false
 
+  vars_files:
+    - vars/common.yml
+
   vars:
     technitium_url: "http://localhost:5380"
     technitium_api: "{{ technitium_url }}/api"
     technitium_admin_user: "admin"
-    zone_dir: "/opt/infra/technitium/dns/zones"
-    upstream_resolver_ip: "172.16.100.1"
     # Overridden via -e from main.tf's remote-exec chain; defaults here only
     # matter when running this playbook by hand.
     dns_hostname: "ns1.example.com"
@@ -181,9 +182,11 @@
           forwarders: "{{ upstream_resolver_ip }}"
           dnssecValidation: false
           recursion: "UseSpecifiedNetworkACL"
-          recursionNetworkACL: "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
-          zoneTransferAllowedNetworks: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+          recursionNetworkACL: "{{ recursion_network_acl }}"
+          zoneTransferAllowedNetworks: "{{ zone_transfer_allowed_networks }}"
           logQueries: true
+          enableBlocking: "{{ enable_blocking }}"
+          blockListUrls: "{{ technitium_block_list_urls }}"
         status_code: 200
       no_log: true
 
@@ -515,7 +518,7 @@
         body:
           zone: "{{ item }}"
           update: "UseSpecifiedNetworkACL"
-          updateNetworkACL: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17,10.0.0.0/8"
+          updateNetworkACL: "{{ update_network_acl }}"
           updateSecurityPolicies: "{{ tsig_key_name }}|*.{{ item }}|A,AAAA,CNAME,TXT,SRV,DHCID"
         status_code: 200
 

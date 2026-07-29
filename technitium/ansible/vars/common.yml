@@ -1,0 +1,98 @@
+---
+# Centralized, non-secret configuration shared across the Technitium
+# Ansible playbooks. Anything here is safe to change and takes effect on
+# the next rebuild/run against every playbook that includes this file --
+# no per-playbook edits needed.
+#
+# Deliberately NOT here:
+#   - dns_hostname, is_staging, acme_server, nfs_subdir -- these already
+#     vary per-invocation (ns1 vs ns2 vs staging) and are correctly passed
+#     via Terraform's -e flags (main.tf/ns2.tf), tied to *.tfvars.
+#   - technitium_url / technitium_api -- these deliberately differ per
+#     playbook depending on which port is actually live at that point in
+#     bootstrap (5380 before configure-technitium-tls.yaml runs, 8443
+#     after). Centralizing a single value here would be wrong, not just
+#     redundant -- each playbook keeps its own.
+#   - Anything secret (passwords, keys, tokens) -- those stay in bw.env
+#     only, see secrets/bw.env.sample.
+
+# Where the git-tracked zone files live on the VM once cloud-init has
+# cloned the repo. Used by configure-technitium.yaml (zone file discovery
+# + import) and configure-technitium-secondary.yaml (zone name discovery
+# for Secondary zone creation -- ns2 doesn't need the file content itself).
+zone_dir: "/opt/infra/technitium/dns/zones"
+
+# Unbound's LAN-facing IP -- the target of every zone's FWD record
+# (Conditional Forwarder / split-DNS fallback for names not locally
+# defined). See configure-technitium.yaml task 11.
+upstream_resolver_ip: "172.16.100.1"
+
+# ns1's stable IP. Used as the primary every Secondary zone (ns2) transfers
+# from, and as the DNS server DHCP-DDNS updates (via Kea) target.
+technitium_dns_server_ip: "172.16.100.6"
+
+# NFS-backed, cross-rebuild persistent storage for the Let's Encrypt
+# cert/key/renewal state, since every rebuild is a brand new, ephemeral VM.
+# nas01.example.com (NOT nas01.storage.example.com) is deliberate: the
+# "storage" subdomain is the NAS's dedicated 10GbE iSCSI interface (used
+# for Proxmox's own block storage), a different, likely isolated network
+# from the Technitium VM's subnet. nas01.example.com is the NAS's
+# general-purpose LAN interface, on the same subnet as this VM -- the
+# correct one for NFS. See configure-technitium-tls.yaml task 4.
+nfs_server: "nas01.example.com"
+nfs_export_path: "/mnt/tank/files/config"
+nfs_mount_point: "/mnt/technitium-share"
+
+# Base zone used for Kea DHCP-DDNS's forward-zone/qualifying-suffix
+# settings pushed to OPNsense. See configure-technitium-apps.yaml's
+# OPNsense DDNS/TSIG sync section.
+dns_forward_zone: "example.com."
+
+# Trusted internal network ranges, used as the allow-list for recursion,
+# zone transfer, and dynamic updates (configure-technitium.yaml /
+# configure-technitium-secondary.yaml). These three are related but were
+# NOT identical before centralizing here -- recursion_network_acl
+# additionally includes loopback (127.0.0.1/32, ::1/128), and
+# update_network_acl additionally includes 10.0.0.0/8. Preserved exactly
+# as they were rather than unified into one shared value, since collapsing
+# them would be a real behavior change, not just a refactor -- worth a
+# deliberate decision (not a silent one) on whether that divergence is
+# intentional before consolidating further.
+recursion_network_acl: "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+zone_transfer_allowed_networks: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+update_network_acl: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17,10.0.0.0/8"
+
+# Global DNS blocking (Settings > Blocking in the web console).
+# blockListUrls is a single comma-separated string of URLs (Technitium's
+# own format -- confirmed against its APIDOCS.md, not guessed). Empty by
+# default: enableBlocking=true with zero URLs is a harmless functional
+# no-op (nothing to block), not an error -- fill in real block list
+# URL(s) before relying on this. See configure-technitium.yaml task 7.
+enable_blocking: true
+technitium_block_list_urls: ""
+
+# Secure DNS transports + web console TLS/ports
+# (configure-technitium-tls.yaml task 9).
+enable_dns_over_tls: true
+enable_dns_over_https: true
+enable_dns_over_http3: true
+enable_dns_over_quic: true
+web_service_enable_tls: true
+web_service_http_to_tls_redirect: true
+web_console_http_port: 80
+web_console_tls_port: 8443
+
+# Query Logs (PostgreSQL) app retention/threshold settings
+# (configure-technitium-apps.yaml). The exact same three values are used
+# in both the initial config/set and the retry-once-if-it-didn't-stick
+# block -- centralizing here means those two copies can no longer drift
+# from each other. Left unquoted (real YAML integers, not strings) so the
+# JSON body template and the post-write assertion both get the right type.
+querylogs_max_queue_size: 1000000
+querylogs_max_log_days: 30
+querylogs_max_log_records: 0
+
+# Bootstrap-time resolver written to /etc/resolv.conf before Technitium
+# itself is installed/configured (install-technitium.yaml) -- OPNsense's
+# LAN-facing IP.
+bootstrap_resolver_ip: "172.16.10.1"

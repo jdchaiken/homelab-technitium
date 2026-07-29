@@ -3,6 +3,9 @@
   hosts: localhost
   become: true
 
+  vars_files:
+    - vars/common.yml
+
   vars:
     technitium_installer: "https://download.technitium.com/dns/install.sh"
 
@@ -26,7 +29,7 @@
       copy:
         dest: /etc/resolv.conf
         content: |
-          nameserver 172.16.10.1
+          nameserver {{ bootstrap_resolver_ip }}
 
     ###########################################################################
     # INSTALL BITWARDEN CLI

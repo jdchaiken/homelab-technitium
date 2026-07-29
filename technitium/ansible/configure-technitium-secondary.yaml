@@ -4,6 +4,9 @@
   become: true
   gather_facts: false
 
+  vars_files:
+    - vars/common.yml
+
   vars:
     technitium_url: "http://localhost:5380"
     technitium_api: "{{ technitium_url }}/api"
@@ -11,13 +14,8 @@
     # Overridden via -e from ns2.tf's remote-exec chain; default here only
     # matters when running this playbook by hand.
     dns_hostname: "ns2.example.com"
-    # ns1's stable IP -- the primary every Secondary zone below transfers from.
-    primary_dns_server_ip: "172.16.100.6"
-    # Same zone_dir convention as configure-technitium.yaml -- ns2 doesn't
-    # need the file *content* (zones transfer from ns1 via AXFR), just the
-    # zone names, discovered the same way so no playbook edit is needed to
-    # add/remove a zone.
-    zone_dir: "/opt/infra/technitium/dns/zones"
+    # technitium_dns_server_ip (ns1's stable IP, the primary every Secondary
+    # zone below transfers from) and zone_dir come from vars/common.yml.
 
   tasks:
     ###########################################################################
@@ -147,11 +145,11 @@
         body_format: form-urlencoded
         body:
           dnsServerDomain: "{{ dns_hostname }}"
-          forwarders: "172.16.100.1"
+          forwarders: "{{ upstream_resolver_ip }}"
           dnssecValidation: false
           recursion: "UseSpecifiedNetworkACL"
-          recursionNetworkACL: "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
-          zoneTransferAllowedNetworks: "172.16.0.0/12,192.168.200.0/20,192.168.0.0/17"
+          recursionNetworkACL: "{{ recursion_network_acl }}"
+          zoneTransferAllowedNetworks: "{{ zone_transfer_allowed_networks }}"
           logQueries: true
         status_code: 200
       no_log: true
@@ -210,7 +208,7 @@
       loop_control:
         label: "{{ item }}"
       uri:
-        url: "{{ technitium_api }}/zones/create?zone={{ item }}&type=SecondaryForwarder&primaryNameServerAddresses={{ primary_dns_server_ip }}"
+        url: "{{ technitium_api }}/zones/create?zone={{ item }}&type=SecondaryForwarder&primaryNameServerAddresses={{ technitium_dns_server_ip }}"
         method: POST
         headers:
           Authorization: "Bearer {{ technitium_api_key }}"
@@ -218,4 +216,4 @@
 
     - name: Confirm configuration applied
       debug:
-        msg: "Technitium configured as a Secondary Forwarder DNS server (ns2), transferring {{ zone_names | join('/') }} from {{ primary_dns_server_ip }}."
+        msg: "Technitium configured as a Secondary Forwarder DNS server (ns2), transferring {{ zone_names | join('/') }} from {{ technitium_dns_server_ip }}."

@@ -65,6 +65,9 @@
   become: true
   gather_facts: false
 
+  vars_files:
+    - vars/common.yml
+
   vars:
     # Unlike configure-technitium.yaml and configure-technitium-tls.yaml
     # (which run earlier and correctly use the stock HTTP port before it's
@@ -78,9 +81,9 @@
     technitium_url: "https://127.0.0.1:8443"
     technitium_api: "{{ technitium_url }}/api"
     technitium_admin_user: "admin"
-    # Used by the OPNsense DDNS/TSIG sync section near the end of this file.
-    technitium_dns_server_ip: "172.16.100.6"
-    dns_forward_zone: "example.com."
+    # technitium_dns_server_ip and dns_forward_zone come from
+    # vars/common.yml -- used by the OPNsense DDNS/TSIG sync section near
+    # the end of this file.
 
   tasks:
     ###########################################################################
@@ -220,9 +223,9 @@
 #              config: |
 #                {
 #                  "enableLogging": true,
-#                  "maxQueueSize": 1000000,
-#                  "maxLogDays": 30,
-#                  "maxLogRecords": 0,
+#                  "maxQueueSize": {{ querylogs_max_queue_size }},
+#                  "maxLogDays": {{ querylogs_max_log_days }},
+#                  "maxLogRecords": {{ querylogs_max_log_records }},
 #                  "databaseName": "{{ querylogs_pg.databaseName }}",
 #                  "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
 #                }
@@ -268,7 +271,7 @@
 #        - name: Assert Query Logs (PostgreSQL) config was actually applied
 #          assert:
 #            that:
-#              - querylogs_verify_parsed.maxLogDays == 30
+#              - querylogs_verify_parsed.maxLogDays == querylogs_max_log_days
 #            fail_msg: "Query Logs (PostgreSQL) config did not persist on the first attempt -- retrying config/set once (see fields printed above)."
 #            success_msg: "Query Logs (PostgreSQL) config verified as applied."
 #      rescue:
@@ -285,9 +288,9 @@
 #              config: |
 #                {
 #                  "enableLogging": true,
-#                  "maxQueueSize": 1000000,
-#                  "maxLogDays": 30,
-#                  "maxLogRecords": 0,
+#                  "maxQueueSize": {{ querylogs_max_queue_size }},
+#                  "maxLogDays": {{ querylogs_max_log_days }},
+#                  "maxLogRecords": {{ querylogs_max_log_records }},
 #                  "databaseName": "{{ querylogs_pg.databaseName }}",
 #                  "connectionString": "Server={{ querylogs_pg.server }}; Port={{ querylogs_pg.port }}; Username={{ querylogs_pg.username }}; Password={{ querylogs_pg.password }};"
 #                }
@@ -324,7 +327,7 @@
 #        - name: Assert Query Logs (PostgreSQL) config was actually applied after retry
 #          assert:
 #            that:
-#              - querylogs_verify_retry_parsed.maxLogDays == 30
+#              - querylogs_verify_retry_parsed.maxLogDays == querylogs_max_log_days
 #            fail_msg: "Query Logs (PostgreSQL) config still not applied after retrying config/set once -- see fields printed above, needs real investigation."
 #            success_msg: "Query Logs (PostgreSQL) config verified as applied after one retry."
 #    ###########################################################################

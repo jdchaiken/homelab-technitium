@@ -4,6 +4,9 @@
   become: true
   gather_facts: false
 
+  vars_files:
+    - vars/common.yml
+
   vars:
     technitium_url: "http://localhost:5380"
     technitium_api: "{{ technitium_url }}/api"
@@ -20,31 +23,17 @@
     # risk production's real rate limits. Empty means certbot's own default
     # (real production directory) -- see the certbot task below.
     acme_server: ""
+    # nfs_server/nfs_export_path/nfs_mount_point come from vars/common.yml.
     # Persistent, cross-rebuild storage for the Let's Encrypt cert/key/
     # renewal state, so it survives the fact that every rebuild is a brand
     # new, ephemeral VM. See task 4 below.
     #
-    # nas01.example.com (NOT nas01.storage.example.com) is deliberate:
-    # the "storage" subdomain is the NAS's dedicated 10GbE iSCSI interface
-    # (used for Proxmox's itank block storage), which is a different,
-    # likely isolated network from this VM's subnet. nas01.example.com is
-    # the NAS's general-purpose LAN interface, on the same subnet as this
-    # VM -- the correct one for NFS.
-    #
-    # The actual export is the parent /mnt/tank/files/config, not a
-    # technitium-specific export -- this playbook mounts that and creates
-    # its own "technitium" subdirectory within it (task 4), rather than
-    # assuming a technitium subdirectory already exists on the NAS.
-    nfs_server: "nas01.example.com"
-    nfs_export_path: "/mnt/tank/files/config"
-    nfs_mount_point: "/mnt/technitium-share"
     # Staging uses a different subdir ("technitium-staging") on this same
     # NFS export so it can't read or overwrite production's actual
     # certificate state.
     nfs_subdir: "technitium"
     letsencrypt_config_dir: "{{ nfs_mount_point }}/{{ nfs_subdir }}/letsencrypt"
-    web_console_http_port: 80
-    web_console_tls_port: 8443
+    # web_console_http_port/web_console_tls_port come from vars/common.yml.
 
   tasks:
     ###########################################################################
@@ -332,16 +321,16 @@
         body:
           dnsTlsCertificatePath: "{{ pfx_path }}"
           dnsTlsCertificatePassword: "{{ pfx_password }}"
-          enableDnsOverTls: true
-          enableDnsOverHttps: true
-          enableDnsOverHttp3: true
-          enableDnsOverQuic: true
-          webServiceEnableTls: true
+          enableDnsOverTls: "{{ enable_dns_over_tls }}"
+          enableDnsOverHttps: "{{ enable_dns_over_https }}"
+          enableDnsOverHttp3: "{{ enable_dns_over_http3 }}"
+          enableDnsOverQuic: "{{ enable_dns_over_quic }}"
+          webServiceEnableTls: "{{ web_service_enable_tls }}"
           webServiceTlsCertificatePath: "{{ pfx_path }}"
           webServiceTlsCertificatePassword: "{{ pfx_password }}"
           webServiceHttpPort: "{{ web_console_http_port }}"
           webServiceTlsPort: "{{ web_console_tls_port }}"
-          webServiceHttpToTlsRedirect: true
+          webServiceHttpToTlsRedirect: "{{ web_service_http_to_tls_redirect }}"
         status_code: 200
       no_log: true
 
